@@ -127,9 +127,9 @@ def split_bytes(ctx, data, no_addr=False):
         RDD[id, byte] if `no_addr` is true.
     '''
     def split(line):
-        (addr, *bytes) = data.split()
+        (addr, *bytes) = line.split()
         bytes = [int(b, 16) for b in bytes]
         if no_addr: return bytes
         addr = int(addr, 16)
-        bytes = [(addr+i, b) for i,b in enumerate(bytes)]
+        return [(addr+i, b) for i,b in enumerate(bytes)]
     return data.flatMapValues(split)
