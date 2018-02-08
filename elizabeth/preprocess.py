@@ -1,4 +1,4 @@
-def hash_to_url(x=None, http=False, asm=False):
+def hash_to_url(x=None, base='gs', kind='bytes'):
     '''Returns a function mapping document hashes to Google Storage URLs.
 
     The API for this function is fancy. It can be used directly as a closure:
@@ -7,28 +7,30 @@ def hash_to_url(x=None, http=False, asm=False):
 
     Or it can be used to return a closure with different defaults:
 
-        >>> my_rdd.map(hash_to_url(http=True, asm=True))
+        >>> my_rdd.map(hash_to_url(base='https', kind='asm'))
 
     The first form is convenient for interactive use, but may be confusing or
     unclear for production use. Prefer the second form in that case.
 
     Args:
-        x (str): The hash identifying a document instance.
-        http (bool): Use https instead of gs.
-        asm (bool): Download the assembly instead of bytes files.
+        x (str):
+            The hash identifying a document instance.
+        base (str):
+            The base of the URL or local path to the data path. If it is the
+            special string 'https', then the https base URL is used. Likewise
+            if it is the special string 'gs', then the Google Storage base URL
+            is used.
+        kind (str):
+            The kind of file to use, either 'bytes' or 'asm'.
 
     Returns:
         If `x` is given, returns the URL to the document.
         If `x` is None, returns a closure that takes a hash and returns a URL.
     '''
-    if http and asm:
-        closure = lambda x: f'https://storage.googleapis.com/uga-dsp/project2/data/asm/{x}.asm'
-    elif http:
-        closure = lambda x: f'https://storage.googleapis.com/uga-dsp/project2/data/bytes/{x}.bytes'
-    elif asm:
-        closure = lambda x: f'gs://uga-dsp/project2/data/asm/{x}.asm'
-    else:
-        closure = lambda x: f'gs://uga-dsp/project2/data/bytes/{x}.bytes'
+    if base == 'https': base = 'https://storage.googleapis.com/uga-dsp/project2/data'
+    if base == 'gs': base = 'gs://uga-dsp/project2/data'
+
+    closure = lambda x: f'{base}/{kind}/{x}.{kind}'
 
     if x is None:
         return closure
@@ -36,7 +38,7 @@ def hash_to_url(x=None, http=False, asm=False):
         return closure(x)
 
 
-def load_data(ctx, manifest, http=False, asm=False):
+def load_data(ctx, manifest, base='gs', kind='bytes'):
     '''Load data from a manifest file into an RDD.
 
     A manifest file gives the hash identifying each document on separate lines.
@@ -49,10 +51,17 @@ def load_data(ctx, manifest, http=False, asm=False):
     guaranteed to match the order given in the manifest file.
 
     Args:
-        ctx: The SparkContext in which to operate.
-        manifest: Path or URL of the manifest file.
-        http: Download malware files over http instead of gs.
-        asm: Download assembly instead of bytes files.
+        ctx:
+            The SparkContext in which to operate.
+        manifest:
+            Path or URL of the manifest file.
+        base (str):
+            The base of the URL or local path to the data path. If it is the
+            special string 'https', then the https base URL is used. Likewise
+            if it is the special string 'gs', then the Google Storage base URL
+            is used.
+        kind (str):
+            The kind of file to use, either 'bytes' or 'asm'.
 
     Returns:
         RDD[id, line]
@@ -61,10 +70,10 @@ def load_data(ctx, manifest, http=False, asm=False):
     manifest = str(manifest)
 
     # Read the manifest as an RDD[id, url].
-    manifest = ctx.textFile(manifest)                               # RDD[hash]
-    manifest = manifest.zipWithIndex()                              # RDD[hash, id]
-    manifest = manifest.map(lambda x: (x[1], x[0]))                 # RDD[id, hash]
-    manifest = manifest.mapValues(hash_to_url(http=http, asm=asm))  # RDD[id, url]
+    manifest = ctx.textFile(manifest)                                 # RDD[hash]
+    manifest = manifest.zipWithIndex()                                # RDD[hash, id]
+    manifest = manifest.map(lambda x: (x[1], x[0]))                   # RDD[id, hash]
+    manifest = manifest.mapValues(hash_to_url(base=base, kind=kind))  # RDD[id, url]
 
     # Load each URL as a separate RDD[line], then combine to RDD[id, line].
     data = {id: ctx.textFile(url) for id, url in manifest.toLocalIterator()}  # {id: RDD[line]}
