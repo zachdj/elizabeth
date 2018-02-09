@@ -130,9 +130,16 @@ def split_bytes(ctx, data, no_addr=False):
         RDD[id, byte] if `no_addr` is true.
     '''
     def split(line):
-        (addr, *bytes) = line.split()
-        bytes = [int(b, 16) for b in bytes]
-        if no_addr: return bytes
-        addr = int(addr, 16)
-        return [(addr+i, b) for i,b in enumerate(bytes)]
+        try:
+            (addr, *bytes) = line.split()
+            bytes = [int(b, 16) for b in bytes]
+            if no_addr: return bytes
+            addr = int(addr, 16)
+            return [(addr+i, b) for i,b in enumerate(bytes)]
+        except ValueError:
+            # ValueError occurs on invalid hex,
+            # e.g. the missing byte symbol '??'.
+            # For now, we discard the whole line. See #6.
+            # https://github.com/dsp-uga/elizabeth/issues/6
+            return []
     return data.flatMapValues(split)
