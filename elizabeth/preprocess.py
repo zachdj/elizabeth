@@ -77,7 +77,10 @@ def load_data(ctx, manifest, base='gs', kind='bytes'):
 
     # Load each URL as a separate RDD[line], then combine to RDD[id, line].
     data = {id: ctx.textFile(url) for id, url in manifest.toLocalIterator()}  # {id: RDD[line]}
-    data = [rdd.map(lambda x: (id, x)) for id, rdd in data.items()]           # [RDD[id, line]]
+
+    def create_id_mapper(id):
+        return lambda x: (id, x)
+    data = [rdd.map(create_id_mapper(id)) for id, rdd in data.items()]        # [RDD[id, line]]
     data = ctx.union(data)                                                    # RDD[id, line]
 
     return data
@@ -108,7 +111,7 @@ def load_labels(ctx, labels):
 
     # Read the labels as an RDD[id, url].
     labels = ctx.textFile(labels)                # RDD[label]
-    labels = ctx.zipWithIndex(labels)            # RDD[label, id]
+    labels = labels.zipWithIndex()               # RDD[label, id]
     labels = labels.map(lambda x: (x[1], x[0]))  # RDD[id, label]
 
     return labels
