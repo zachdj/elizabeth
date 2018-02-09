@@ -99,3 +99,9 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+# Jetbrains IDE files
+.idea
+
+# local submit script
+scripts/submit-local.sh
