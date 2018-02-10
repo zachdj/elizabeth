@@ -1,9 +1,10 @@
 import re
+from pathlib import Path
 
 import elizabeth
 
 
-def hash_to_url(x=None, base='gs', kind='bytes'):
+def hash_to_url(hash=None, base='./data', kind='bytes'):
     '''Returns a function mapping document hashes to Google Storage URLs.
 
     The API for this function is fancy. It can be used directly as a closure:
@@ -18,29 +19,34 @@ def hash_to_url(x=None, base='gs', kind='bytes'):
     unclear for production use. Prefer the second form in that case.
 
     Args:
-        x (str):
+        hash (str):
             The hash identifying a document instance.
         base (str):
-            The base of the URL or local path to the data path. If it is the
-            special string 'https', then the https base URL is used. Likewise
-            if it is the special string 'gs', then the Google Storage base URL
-            is used.
+            The base of the URL or path to the data.
+            The data must live at '{base}/{kind}/{hash}.{kind}'
         kind (str):
             The kind of file to use, either 'bytes' or 'asm'.
 
     Returns:
-        If `x` is given, returns the URL to the document.
-        If `x` is None, returns a closure that takes a hash and returns a URL.
+        If `hash` is given, returns the URL to the document.
+        If `hash` is None, returns a closure that transforms a hash to a URL.
     '''
-    if base == 'https': base = 'https://storage.googleapis.com/uga-dsp/project2/data'
-    if base == 'gs': base = 'gs://uga-dsp/project2/data'
+    base = str(base)
 
-    closure = lambda x: f'{base}/{kind}/{x}.{kind}'
+    # If base is not a URL, turn it into a `file:` URL.
+    # Note that Spark uses `file:`, but Pathlib uses `file://`,
+    # so we can't just use `Path.to_uri`
+    url = re.compile(r'^[a-zA-Z0-9]+:')
+    if not url.match(base):
+        base = Path(base).resolve()
+        base = f'file:{base}'
 
-    if x is None:
+    closure = lambda hash: f'{base}/{kind}/{hash}.{kind}'
+
+    if hash is None:
         return closure
     else:
-        return closure(x)
+        return closure(hash)
 
 
 def load_data(manifest, base='gs', kind='bytes'):
@@ -59,10 +65,9 @@ def load_data(manifest, base='gs', kind='bytes'):
         manifest:
             Path or URL of the manifest file.
         base (str):
-            The base of the URL or local path to the data path. If it is the
-            special string 'https', then the https base URL is used. Likewise
-            if it is the special string 'gs', then the Google Storage base URL
-            is used.
+            The base of the URL or path to the data. The special strings 'gs'
+            and 'https' expand to the URLs used by Data Science Practicum at
+            UGA over the Google Storage and HTTPS protocols respectivly.
         kind (str):
             The kind of file to use, either 'bytes' or 'asm'.
 
@@ -72,21 +77,23 @@ def load_data(manifest, base='gs', kind='bytes'):
     spark = elizabeth.session()
     ctx = spark.sparkContext
 
-    # Cast to str to support pathlib.Path etc.
-    manifest = str(manifest)
+    # Special base paths
+    if base == 'https': base = 'https://storage.googleapis.com/uga-dsp/project2/data'
+    if base == 'gs': base = 'gs://uga-dsp/project2/data'
 
-    # Read the manifest as an RDD[id, url].
-    manifest = ctx.textFile(manifest)                                 # RDD[hash]
-    manifest = manifest.zipWithIndex()                                # RDD[hash, id]
-    manifest = manifest.map(lambda x: (x[1], x[0]))                   # RDD[id, hash]
-    manifest = manifest.mapValues(hash_to_url(base=base, kind=kind))  # RDD[id, url]
+    # Read the manifest as an RDD[url, id].
+    manifest = str(manifest)  # cast to str to support pathlib.Path etc.
+    manifest = ctx.textFile(manifest)                           # RDD[hash]
+    manifest = manifest.map(hash_to_url(base=base, kind=kind))  # RDD[url]
+    manifest = manifest.zipWithIndex()                          # RDD[url, id]
 
-    # Load each URL as a separate RDD[line], then combine to RDD[id, line].
-    id_mapper = lambda id: lambda x: (id, x)
-    data = {id: ctx.textFile(url) for id, url in manifest.toLocalIterator()}  # {id: RDD[line]}
-    data = [rdd.map(id_mapper(id)) for id, rdd in data.items()]               # [RDD[id, line]]
-    data = ctx.union(data)                                                    # RDD[id, line]
+    # Load all files in the base directoy, then join out the ones in the manifest.
+    data = ctx.wholeTextFiles(f'{base}/{kind}')          # RDD[url, text]
+    data = manifest.join(data)                           # RDD[url, (id, text)]
+    data = data.map(lambda x: (x[1][0], x[0], x[1][1]))  # RDD[id, url, text]
 
+    # Create a DataFrame.
+    data = spark.createDataFrame(data, ['id', 'url', 'text'])
     return data
 
 
@@ -120,6 +127,8 @@ def load_labels(labels):
     labels = labels.zipWithIndex()               # RDD[label, id]
     labels = labels.map(lambda x: (x[1], x[0]))  # RDD[id, label]
 
+    # Create a DataFrame.
+    labels = spark.createDataFrame(labels, ['id', 'label'])
     return labels
 
 
