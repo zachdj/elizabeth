@@ -1,5 +1,7 @@
 import re
 
+import elizabeth
+
 
 def hash_to_url(x=None, base='gs', kind='bytes'):
     '''Returns a function mapping document hashes to Google Storage URLs.
@@ -41,7 +43,7 @@ def hash_to_url(x=None, base='gs', kind='bytes'):
         return closure(x)
 
 
-def load_data(ctx, manifest, base='gs', kind='bytes'):
+def load_data(manifest, base='gs', kind='bytes'):
     '''Load data from a manifest file into an RDD.
 
     A manifest file gives the hash identifying each document on separate lines.
@@ -54,8 +56,6 @@ def load_data(ctx, manifest, base='gs', kind='bytes'):
     guaranteed to match the order given in the manifest file.
 
     Args:
-        ctx:
-            The SparkContext in which to operate.
         manifest:
             Path or URL of the manifest file.
         base (str):
@@ -69,6 +69,9 @@ def load_data(ctx, manifest, base='gs', kind='bytes'):
     Returns:
         RDD[id, line]
     '''
+    spark = elizabeth.session()
+    ctx = spark.sparkContext
+
     # Cast to str to support pathlib.Path etc.
     manifest = str(manifest)
 
@@ -87,7 +90,7 @@ def load_data(ctx, manifest, base='gs', kind='bytes'):
     return data
 
 
-def load_labels(ctx, labels):
+def load_labels(labels):
     '''Load labels from a label file into an RDD.
 
     A label file corresponds to a manifest file and each line gives the label
@@ -101,12 +104,14 @@ def load_labels(ctx, labels):
     corresponding manifest file.
 
     Args:
-        ctx: The SparkContext in which to operate.
         labels: Path or URL of the label file.
 
     Returns:
         RDD[id, label]
     '''
+    spark = elizabeth.session()
+    ctx = spark.sparkContext
+
     # Cast to str to support pathlib.Path etc.
     labels = str(labels)
 
@@ -118,7 +123,7 @@ def load_labels(ctx, labels):
     return labels
 
 
-def split_bytes(ctx, data, no_addr=False):
+def split_bytes(data, no_addr=False):
     '''Splits RDDs of the form `RDD[id, line]` into `RDD[id, (addr, byte)]`
     where `addr` is the address of the byte, and `byte` is the value.
 
@@ -132,6 +137,9 @@ def split_bytes(ctx, data, no_addr=False):
         RDD[id, (addr, byte)] if `no_addr` is false (default).
         RDD[id, byte] if `no_addr` is true.
     '''
+    spark = elizabeth.session()
+    ctx = spark.sparkContext
+
     def split(line):
         try:
             (addr, *bytes) = line.split()
@@ -151,7 +159,7 @@ def split_bytes(ctx, data, no_addr=False):
     return data
 
 
-def split_asm(ctx, data):
+def split_asm(data):
     '''Splits RDDs of the form `RDD[id, line]` into `RDD[id, (s, a, b, o, r)]`
     where `s` is the segment type, `a` is the address of the instruction, `b`
     is the big-end int value of the instruction, `o` is the opcode, and `r` is
@@ -165,6 +173,8 @@ def split_asm(ctx, data):
     Returns:
         RDD[id, (segment, addr, bytes, opcode, rest)]
     '''
+    spark = elizabeth.session()
+    ctx = spark.sparkContext
     pattern = re.compile(r'\.([a-z]+):([0-9A-F]+)((?:\s[0-9A-F]{2})+)\s+([a-z]+)(?:\s+([^;]*))?')
 
     def match(x):
