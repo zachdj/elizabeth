@@ -1,6 +1,10 @@
 # Sample data
 data
+data.tar.xz
+data.tar.xz.torrent
 
+# Spark
+spark-warehouse
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
