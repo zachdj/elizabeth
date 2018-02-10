@@ -79,11 +79,9 @@ def load_data(ctx, manifest, base='gs', kind='bytes'):
     manifest = manifest.mapValues(hash_to_url(base=base, kind=kind))  # RDD[id, url]
 
     # Load each URL as a separate RDD[line], then combine to RDD[id, line].
+    id_mapper = lambda id: lambda x: (id, x)
     data = {id: ctx.textFile(url) for id, url in manifest.toLocalIterator()}  # {id: RDD[line]}
-
-    def create_id_mapper(id):
-        return lambda x: (id, x)
-    data = [rdd.map(create_id_mapper(id)) for id, rdd in data.items()]        # [RDD[id, line]]
+    data = [rdd.map(id_mapper(id)) for id, rdd in data.items()]               # [RDD[id, line]]
     data = ctx.union(data)                                                    # RDD[id, line]
 
     return data
