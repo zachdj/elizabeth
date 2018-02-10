@@ -1,3 +1,14 @@
+# Local scripting
+scripts/submit-local.sh
+
+# Sample data
+data
+data.tar.xz
+data.tar.xz.torrent
+
+# Spark
+spark-warehouse
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -102,6 +113,3 @@ ENV/
 
 # Jetbrains IDE files
 .idea
-
-# local submit script
-scripts/submit-local.sh
