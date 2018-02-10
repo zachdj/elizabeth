@@ -1,3 +1,6 @@
+# Local scripting
+scripts/submit-local.sh
+
 # Sample data
 data
 data.tar.xz
@@ -110,6 +113,3 @@ ENV/
 
 # Jetbrains IDE files
 .idea
-
-# local submit script
-scripts/submit-local.sh
