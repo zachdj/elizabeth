@@ -1,3 +1,6 @@
+import re
+
+
 def hash_to_url(x=None, base='gs', kind='bytes'):
     '''Returns a function mapping document hashes to Google Storage URLs.
 
@@ -121,6 +124,8 @@ def split_bytes(ctx, data, no_addr=False):
     '''Splits RDDs of the form `RDD[id, line]` into `RDD[id, (addr, byte)]`
     where `addr` is the address of the byte, and `byte` is the value.
 
+    The input is expected to be loaded from bytes files.
+
     Args:
         data (RDD[id, line]): The RDD to split.
         no_addr: Do not include the address.
@@ -130,9 +135,65 @@ def split_bytes(ctx, data, no_addr=False):
         RDD[id, byte] if `no_addr` is true.
     '''
     def split(line):
-        (addr, *bytes) = line.split()
-        bytes = [int(b, 16) for b in bytes]
-        if no_addr: return bytes
-        addr = int(addr, 16)
-        return [(addr+i, b) for i,b in enumerate(bytes)]
-    return data.flatMapValues(split)
+        try:
+            (addr, *bytes) = line.split()
+            bytes = [int(b, 16) for b in bytes]
+            if no_addr: return bytes
+            addr = int(addr, 16)
+            return [(addr+i, b) for i,b in enumerate(bytes)]
+        except ValueError:
+            # ValueError occurs on invalid hex,
+            # e.g. the missing byte symbol '??'.
+            # For now, we discard the whole line. See #6.
+            # https://github.com/dsp-uga/elizabeth/issues/6
+            return []
+    data = data.flatMapValues(split)
+
+    data = data.persist()
+    return data
+
+
+def split_asm(ctx, data):
+    '''Splits RDDs of the form `RDD[id, line]` into `RDD[id, (s, a, b, o, r)]`
+    where `s` is the segment type, `a` is the address of the instruction, `b`
+    is the big-end int value of the instruction, `o` is the opcode, and `r` is
+    the rest of the instruction.
+
+    The input is expected to be loaded from asm files.
+
+    Args:
+        data (RDD[id, line]): The RDD to split.
+
+    Returns:
+        RDD[id, (segment, addr, bytes, opcode, rest)]
+    '''
+    pattern = re.compile(r'\.([a-z]+):([0-9A-F]+)((?:\s[0-9A-F]{2})+)\s+([a-z]+)(?:\s+([^;]*))?')
+
+    def match(x):
+        (id, line) = x
+        return pattern.match(line) is not None
+    data = data.filter(match)
+
+    def split(line):
+        m = pattern.match(line)
+        segment = m[1]
+        addr = int(m[2], 16)
+        bytes = parse_bytes(m[3])
+        opcode = m[4]
+        rest = m[5].strip()
+        return (segment, addr, bytes, opcode, rest)
+    data = data.mapValues(split)
+
+    data = data.persist()
+    return data
+
+
+
+def parse_bytes(bytes):
+    '''Parse strings like '0B AF 32' into big-end integers.
+    '''
+    val = 0
+    for b in bytes.split():
+        val = val << 8
+        val = val + int(b, 16)
+    return val
