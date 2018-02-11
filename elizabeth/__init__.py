@@ -3,15 +3,15 @@ from . import preprocess
 import pyspark
 
 
-def context(**kwargs):
-    conf = pyspark.SparkConf()
-    conf.setAppName('elizabeth')
-    conf.setAll(kwargs.items())
-    ctx = pyspark.SparkContext()
-    return ctx
-
-
 def session(**kwargs):
+    '''Get or create the global `SparkSession`.
+
+    Kwargs:
+        Forwarded to `SparkConf.setAll` to initialize the session.
+
+    Returns:
+        SparkSession
+    '''
     conf = pyspark.SparkConf()
     conf.setAppName('elizabeth')
     conf.setAll(kwargs.items())
