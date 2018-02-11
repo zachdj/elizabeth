@@ -103,6 +103,7 @@ def load_data(manifest, base='gs', kind='bytes'):
     data = spark.createDataFrame(data, ['id', 'url', 'text'])
     return data
 
+
 def load_lines(manifest, base='gs', kind='bytes'):
     spark = elizabeth.session()
     ctx = spark.sparkContext
@@ -120,14 +121,13 @@ def load_lines(manifest, base='gs', kind='bytes'):
     manifest = manifest.map(lambda x: (x[1], x[0]))  # RDD[id, url]
     manifest = manifest.toLocalIterator()
 
-    lines = ctx.emptyRDD()
     id_mapper = lambda id: lambda x: (id, x)
-    for id, url in manifest:
-        document_lines = ctx.textFile(url)\
-            .filter(lambda x: '??' not in x)\
-            .map(lambda line: line.split()[1:]) \
-            .map(id_mapper(id))
-        lines = lines.union(document_lines)
+    rdds = [ctx.textFile(url)                               # RDD[line]
+                .map(lambda line: line.split()[1:])         # RDD[tokens]
+                .filter(lambda tokens: '??' not in tokens)  # discard lines with '??' bytes
+                .map(id_mapper(id))                         # RDD[id, line]
+            for id, url in manifest]
+    lines = ctx.union(rdds)
 
     return lines.toDF(['id', 'line'])
 
