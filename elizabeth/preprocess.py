@@ -84,16 +84,20 @@ def load_data(manifest, base='gs', kind='bytes'):
     if base == 'https': base = 'https://storage.googleapis.com/uga-dsp/project2/data'
     if base == 'gs': base = 'gs://uga-dsp/project2/data'
 
-    # Read the manifest as an RDD[url, id].
+    # Read the manifest as an iterator over (id, url).
+    # We use Spark to build the iterator to support hdfs etc.
     manifest = str(manifest)  # cast to str to support pathlib.Path etc.
     manifest = ctx.textFile(manifest)                           # RDD[hash]
     manifest = manifest.map(hash_to_url(base=base, kind=kind))  # RDD[url]
     manifest = manifest.zipWithIndex()                          # RDD[url, id]
+    manifest = manifest.map(lambda x: (x[1], x[0]))             # RDD[id, url]
+    manifest = manifest.toLocalIterator()                       # (id, url)
 
     # Load all files in the base directoy, then join out the ones in the manifest.
-    data = ctx.wholeTextFiles(f'{base}/{kind}')          # RDD[url, text]
-    data = manifest.join(data)                           # RDD[url, (id, text)]
-    data = data.map(lambda x: (x[1][0], x[0], x[1][1]))  # RDD[id, url, text]
+    id_mapper = lambda id: lambda x: (id, x[0], x[1])
+    data = ((id, ctx.wholeTextFiles(url)) for id, url in manifest)  # (id, RDD[url, text])
+    data = [rdd.map(id_mapper(id)) for id, rdd in data]             # [RDD[id, url, text]]
+    data = ctx.union(data)                                          # RDD[id, url, text]
 
     # Create a DataFrame.
     data = spark.createDataFrame(data, ['id', 'url', 'text'])
