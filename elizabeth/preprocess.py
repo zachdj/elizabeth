@@ -101,6 +101,13 @@ def load_data(manifest, base='gs', kind='bytes'):
 
     # Create a DataFrame.
     data = spark.createDataFrame(data, ['id', 'url', 'text'])
+
+    # Tokenization
+    if kind == 'asm':
+        data = data.withColumn('tokens', elizabeth.preprocess.split_asm(data.text))
+    else:
+        data = data.withColumn('tokens', elizabeth.preprocess.split_bytes(data.text))
+
     return data
 
 
