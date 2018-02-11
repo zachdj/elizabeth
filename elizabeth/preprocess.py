@@ -130,9 +130,9 @@ def load_labels(labels):
     labels = str(labels)
 
     # Read the labels as an RDD[id, url].
-    labels = ctx.textFile(labels)                # RDD[label]
-    labels = labels.zipWithIndex()               # RDD[label, id]
-    labels = labels.map(lambda x: (x[1], x[0]))  # RDD[id, label]
+    labels = ctx.textFile(labels)                     # RDD[label]
+    labels = labels.zipWithIndex()                    # RDD[label, id]
+    labels = labels.map(lambda x: (x[1], int(x[0])))  # RDD[id, label]
 
     # Create a DataFrame.
     labels = spark.createDataFrame(labels, ['id', 'label'])
