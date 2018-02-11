@@ -141,7 +141,7 @@ def load_labels(labels):
 
 @elizabeth.udf([str])
 def split_bytes(text):
-    '''Splits the text of a bytes file into a list of integer bytes.
+    '''Splits the text of a bytes file into a list of bytes.
     '''
     bytes = []
     for line in text.split('\n'):
