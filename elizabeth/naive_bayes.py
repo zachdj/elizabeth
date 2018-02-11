@@ -1,133 +1,67 @@
-"""
-Object-oriented Naive Bayes classifier using MLLib
+import pyspark
+import pyspark.ml.feature
+import pyspark.ml.classification
 
-TODO: add more details
-"""
-
-from pyspark.mllib.classification import NaiveBayes, NaiveBayesModel
-from pyspark.mllib.feature import HashingTF, IDF
-from pyspark.mllib.linalg import Vectors, SparseVector
-from pyspark.mllib.regression import LabeledPoint
-from collections import defaultdict
-
-from elizabeth import context
-from elizabeth import preprocess
+import elizabeth
 
 
-def add_sparse(v1, v2):
-    """
-    Adds two sparse vectors
+class NaiveBayes:
+    '''A NaiveBayes model with TF-IDF.
+    '''
 
-    Attribution: https://stackoverflow.com/questions/32981875/how-to-add-two-sparse-vectors-in-spark-using-python
-    TODO: this should be moved to some other module
-    """
-    assert isinstance(v1, SparseVector) and isinstance(v2, SparseVector)
-    assert v1.size == v2.size
-    values = defaultdict(float) # Dictionary with default value 0.0
-    # Add values from v1
-    for i in range(v1.indices.size):
-        values[v1.indices[i]] += v1.values[i]
-    # Add values from v2
-    for i in range(v2.indices.size):
-        values[v2.indices[i]] += v2.values[i]
-    return Vectors.sparse(v1.size, dict(values))
+    def __init__(self):
+        '''Initialize the model.
+        '''
+        self._tf = None
+        self._idf = None
+        self._model = None
 
+    def fit(self, x, y, data_col='bytes'):
+        '''Fit the model to some data.
 
-class NaiveBayesClassifier:
-    def __init__(self, ctx):
-        """
-        Initializes the classifier using the provided SparkContext
-        The provided SparkContext will be used to load data
+        The data (x) and labels (y) are joind on the column `id`.
 
-        :param ctx: The SparkContext to use with this classifier
-        """
-        self.ctx = ctx
-        self.model = None
+        Args:
+            x (DataFrame):
+                The training data. It must contain a column `id` that uniquely
+                identifies each instance, and a data column of `ArrayType(str)`
+                that provides tokens.
+            y (DataFrame):
+                The training labels. It must contain a column `id` that uniquely
+                identifies each instance, and a column `label` giving the label
+                of each instance.
+            data_col (str):
+                The name of the data column.
 
-    def train(self, manifest, labels):
-        """ Train the classifier
+        Returns:
+            self
+        '''
+        tf = pyspark.ml.feature.CountVectorizer(inputCol=data_col, outputCol='tf').fit(x)
+        x = tf.transform(x)
 
-        The manifest file contains the hashes for the documents used to train this classifier, one per line
-        The labels file contains the labels for the training documents referenced in the manifest file
+        idf = pyspark.ml.feature.IDF(inputCol='tf', outputCol='tfidf').fit(x)
+        x = idf.transform(x)
 
-        Successful training of the Classifier should cause self.model to be set
+        x = x.join(y, on='id')
+        nb = pyspark.ml.classification.NaiveBayes(featuresCol='tfidf').fit(x)
 
-        :param manifest: Path or URL of the manifest file.
-        :param labels: Path or URL of the labels file.
-        :return: None
-        """
+        self._tf = tf
+        self._idf = idf
+        self._model = nb
+        return self
 
-        hashingTF = HashingTF(numFeatures=256)  # used to compute term frequencies
+    def transform(self, x):
+        '''Transforms a dataset by adding a column of predicted labels.
 
-        def _line_to_byte_array(line):
-            tokens = line.split()[1:]  # throw away the line pointer
-            return tokens
+        Args:
+            x (DataFrame):
+                The data to transform. It must contain a data column of
+                `ArrayType(str)` that provides tokens.
 
-        data = preprocess.load_data(ctx=self.ctx, manifest=manifest)            # RDD[id, line]
-        labels = preprocess.load_labels(ctx=self.ctx, labels=labels)            # RDD[id, label]
-        tokenized_lines = data.mapValues(_line_to_byte_array)
-        term_counts = tokenized_lines.mapValues(lambda x: hashingTF.transform(x).toArray())   # RDD[id, term_line_count]
-        term_counts = term_counts.reduceByKey(lambda x, y: x+y)                 # RDD[id, term_freq]
-        term_counts.cache()
-
-        tf = term_counts.map(lambda x: x[1])                                    # RDD[term_freq]
-        idf = IDF().fit(tf)                                                     # IDFModel
-
-        tfidf = term_counts.mapValues(idf.transform)                            # RDD[id, tfidf_vec]
-
-        labeled_data = labels.join(tfidf).map(lambda x: x[1])                   # RDD[label, tfidf_vec]
-        labeled_points = labeled_data.map(lambda x: LabeledPoint(x[0], x[1]))   # RDD[LabeledPoint]
-
-        self.model = NaiveBayes.train(labeled_points, lambda_=1.0)
-
-    def classify(self, manifest):
-        """ Classify unlabeled data
-
-        The manifest file contains the hashes for the documents to be labelled
-
-        :param manifest:
-        :return: RDD[id, predicted_label]
-        """
-        hashingTF = HashingTF(numFeatures=256)  # used to compute term frequencies
-
-        def _line_to_byte_array(line):
-            tokens = line.split()[1:]  # throw away the line pointer
-            return tokens
-
-        data = preprocess.load_data(ctx=self.ctx, manifest=manifest)            # RDD[id, line]
-        tokenized_lines = data.mapValues(_line_to_byte_array)
-        term_counts = tokenized_lines.mapValues(lambda x: hashingTF.transform(x).toArray())   # RDD[id, term_line_count]
-        term_counts = term_counts.reduceByKey(lambda x, y: x+y)                 # RDD[id, term_freq]
-        term_counts.cache()
-
-        tf = term_counts.map(lambda x: x[1])                                    # RDD[term_freq]
-        idf = IDF().fit(tf)                                                     # IDFModel
-
-        tfidf = term_counts.mapValues(idf.transform)                            # RDD[id, tfidf_vec]
-
-        labelled = tfidf.mapValues(lambda x: self.model.predict(x))
-        return labelled
-
-    def evaluate(self, manifest, labels):
-        """ Evaluate the classifier on a labelled test set
-
-        The manifest file contains the hashes for the documents used for evaluation
-        The labels file contains the labels for the testing documents referenced in the manifest file
-
-        :param manifest: Path or URL of the manifest file.
-        :param labels: Path or URL of the labels file.
-        :return: float expressing percentage of correctly classified examples
-        """
-        predictions = self.classify(manifest)
-        labels = preprocess.load_labels(ctx=self.ctx, labels=labels)
-        prediction_and_label = labels.join(predictions).map(lambda x: x[1])
-
-        return prediction_and_label.filter(lambda x: x[0] == x[1]).count() / labels.count()
-
-
-if __name__ == '__main__':
-    # test this classifier
-    ctx = context()
-    classifier = NaiveBayesClassifier(ctx)
-    classifier.train('gs://uga-dsp/project2/files/X_small_train.txt', 'gs://uga-dsp/project2/files/y_small_train.txt')
-    classifier.evaluate('gs://uga-dsp/project2/files/X_small_test.txt', 'gs://uga-dsp/project2/files/y_small_test.txt')
+        Returns:
+            A new DataFrame like x with new columns.
+            TODO: what are the name(s) of the new columns?
+        '''
+        x = self._tf.transform(x)
+        x = self._idf.transform(x)
+        return self._model.transform(x)
