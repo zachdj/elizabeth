@@ -52,12 +52,13 @@ def hash_to_url(hash=None, base='./data', kind='bytes'):
 
 
 def load_data(manifest, base='gs', kind='bytes'):
-    '''Load data from a manifest file into an RDD.
+    '''Load data from a manifest file into a DataFrame.
 
     A manifest file gives the hash identifying each document on separate lines.
 
-    The returned RDD is of the form `RDD[id, line]` where `id` uniquely
-    identifies the document and `line` is a line of the document as a string.
+    The returned DataFrame has columns `id`, `url`, and `text` where `id`
+    is a document identifier, `url` is the path to the document, and `text`
+    is the contents.
 
     Note that the document ID is _not_ the same as the hash. The ID is
     guaranteed to uniquely identify one document and the order of the IDs is
@@ -74,7 +75,7 @@ def load_data(manifest, base='gs', kind='bytes'):
             The kind of file to use, either 'bytes' or 'asm'.
 
     Returns:
-        RDD[id, line]
+        DataFrame[id: bigint, url: string, text: string]
     '''
     spark = elizabeth.session()
     ctx = spark.sparkContext
@@ -100,13 +101,13 @@ def load_data(manifest, base='gs', kind='bytes'):
 
 
 def load_labels(labels):
-    '''Load labels from a label file into an RDD.
+    '''Load labels from a label file into a DataFrame.
 
     A label file corresponds to a manifest file and each line gives the label
     of the document on the same line of the manifest file.
 
-    The returned RDD is of the form `RDD[id, label]` where `id` uniquely
-    identifies the document and `label` is a label for the document.
+    The returned DataFrame has columns `id` and `label` where `id` is a
+    document identifier and `label` is a label for the document.
 
     Note that the document ID is _not_ the same as the hash. The ID of a
     document is guaranteed to match the ID returned by `load_data` from the
@@ -116,7 +117,7 @@ def load_labels(labels):
         labels: Path or URL of the label file.
 
     Returns:
-        RDD[id, label]
+        DataFrame[id: bigint, label: string]
     '''
     spark = elizabeth.session()
     ctx = spark.sparkContext
