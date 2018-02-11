@@ -1,7 +1,12 @@
 import re
+from pathlib import Path
+
+import pyspark
+
+import elizabeth
 
 
-def hash_to_url(x=None, base='gs', kind='bytes'):
+def hash_to_url(hash=None, base='./data', kind='bytes'):
     '''Returns a function mapping document hashes to Google Storage URLs.
 
     The API for this function is fancy. It can be used directly as a closure:
@@ -16,184 +21,151 @@ def hash_to_url(x=None, base='gs', kind='bytes'):
     unclear for production use. Prefer the second form in that case.
 
     Args:
-        x (str):
+        hash (str):
             The hash identifying a document instance.
         base (str):
-            The base of the URL or local path to the data path. If it is the
-            special string 'https', then the https base URL is used. Likewise
-            if it is the special string 'gs', then the Google Storage base URL
-            is used.
+            The base of the URL or path to the data.
+            The data must live at '{base}/{kind}/{hash}.{kind}'
         kind (str):
             The kind of file to use, either 'bytes' or 'asm'.
 
     Returns:
-        If `x` is given, returns the URL to the document.
-        If `x` is None, returns a closure that takes a hash and returns a URL.
+        If `hash` is given, returns the URL to the document.
+        If `hash` is None, returns a closure that transforms a hash to a URL.
     '''
-    if base == 'https': base = 'https://storage.googleapis.com/uga-dsp/project2/data'
-    if base == 'gs': base = 'gs://uga-dsp/project2/data'
+    base = str(base)
 
-    closure = lambda x: f'{base}/{kind}/{x}.{kind}'
+    # If base is not a URL, turn it into a `file:` URL.
+    # Note that Spark uses `file:`, but Pathlib uses `file://`,
+    # so we can't just use `Path.to_uri`
+    url = re.compile(r'^[a-zA-Z0-9]+:')
+    if not url.match(base):
+        base = Path(base).resolve()
+        base = f'file:{base}'
 
-    if x is None:
+    closure = lambda hash: f'{base}/{kind}/{hash}.{kind}'
+
+    if hash is None:
         return closure
     else:
-        return closure(x)
+        return closure(hash)
 
 
-def load_data(ctx, manifest, base='gs', kind='bytes'):
-    '''Load data from a manifest file into an RDD.
+def load_data(manifest, base='gs', kind='bytes'):
+    '''Load data from a manifest file into a DataFrame.
 
     A manifest file gives the hash identifying each document on separate lines.
 
-    The returned RDD is of the form `RDD[id, line]` where `id` uniquely
-    identifies the document and `line` is a line of the document as a string.
+    The returned DataFrame has columns `id`, `url`, and `text` where `id`
+    is a document identifier, `url` is the path to the document, and `text`
+    is the contents.
 
     Note that the document ID is _not_ the same as the hash. The ID is
     guaranteed to uniquely identify one document and the order of the IDs is
     guaranteed to match the order given in the manifest file.
 
     Args:
-        ctx:
-            The SparkContext in which to operate.
         manifest:
             Path or URL of the manifest file.
         base (str):
-            The base of the URL or local path to the data path. If it is the
-            special string 'https', then the https base URL is used. Likewise
-            if it is the special string 'gs', then the Google Storage base URL
-            is used.
+            The base of the URL or path to the data. The special strings 'gs'
+            and 'https' expand to the URLs used by Data Science Practicum at
+            UGA over the Google Storage and HTTPS protocols respectivly.
         kind (str):
             The kind of file to use, either 'bytes' or 'asm'.
 
     Returns:
-        RDD[id, line]
+        DataFrame[id: bigint, url: string, text: string]
     '''
-    # Cast to str to support pathlib.Path etc.
-    manifest = str(manifest)
+    spark = elizabeth.session()
+    ctx = spark.sparkContext
 
-    # Read the manifest as an RDD[id, url].
-    manifest = ctx.textFile(manifest)                                 # RDD[hash]
-    manifest = manifest.zipWithIndex()                                # RDD[hash, id]
-    manifest = manifest.map(lambda x: (x[1], x[0]))                   # RDD[id, hash]
-    manifest = manifest.mapValues(hash_to_url(base=base, kind=kind))  # RDD[id, url]
+    # Special base paths
+    if base == 'https': base = 'https://storage.googleapis.com/uga-dsp/project2/data'
+    if base == 'gs': base = 'gs://uga-dsp/project2/data'
 
-    # Load each URL as a separate RDD[line], then combine to RDD[id, line].
-    data = {id: ctx.textFile(url) for id, url in manifest.toLocalIterator()}  # {id: RDD[line]}
+    # Read the manifest as an iterator over (id, url).
+    # We use Spark to build the iterator to support hdfs etc.
+    manifest = str(manifest)  # cast to str to support pathlib.Path etc.
+    manifest = ctx.textFile(manifest)                           # RDD[hash]
+    manifest = manifest.map(hash_to_url(base=base, kind=kind))  # RDD[url]
+    manifest = manifest.zipWithIndex()                          # RDD[url, id]
+    manifest = manifest.map(lambda x: (x[1], x[0]))             # RDD[id, url]
+    manifest = manifest.toLocalIterator()                       # (id, url)
 
-    def create_id_mapper(id):
-        return lambda x: (id, x)
-    data = [rdd.map(create_id_mapper(id)) for id, rdd in data.items()]        # [RDD[id, line]]
-    data = ctx.union(data)                                                    # RDD[id, line]
+    # Load all files in the base directoy, then join out the ones in the manifest.
+    id_mapper = lambda id: lambda x: (id, x[0], x[1])
+    data = ((id, ctx.wholeTextFiles(url)) for id, url in manifest)  # (id, RDD[url, text])
+    data = [rdd.map(id_mapper(id)) for id, rdd in data]             # [RDD[id, url, text]]
+    data = ctx.union(data)                                          # RDD[id, url, text]
 
+    # Create a DataFrame.
+    data = spark.createDataFrame(data, ['id', 'url', 'text'])
     return data
 
 
-def load_labels(ctx, labels):
-    '''Load labels from a label file into an RDD.
+def load_labels(labels):
+    '''Load labels from a label file into a DataFrame.
 
     A label file corresponds to a manifest file and each line gives the label
     of the document on the same line of the manifest file.
 
-    The returned RDD is of the form `RDD[id, label]` where `id` uniquely
-    identifies the document and `label` is a label for the document.
+    The returned DataFrame has columns `id` and `label` where `id` is a
+    document identifier and `label` is a label for the document.
 
     Note that the document ID is _not_ the same as the hash. The ID of a
     document is guaranteed to match the ID returned by `load_data` from the
     corresponding manifest file.
 
     Args:
-        ctx: The SparkContext in which to operate.
         labels: Path or URL of the label file.
 
     Returns:
-        RDD[id, label]
+        DataFrame[id: bigint, label: string]
     '''
+    spark = elizabeth.session()
+    ctx = spark.sparkContext
+
     # Cast to str to support pathlib.Path etc.
     labels = str(labels)
 
     # Read the labels as an RDD[id, url].
-    labels = ctx.textFile(labels)                # RDD[label]
-    labels = labels.zipWithIndex()               # RDD[label, id]
-    labels = labels.map(lambda x: (x[1], x[0]))  # RDD[id, label]
+    labels = ctx.textFile(labels)                     # RDD[label]
+    labels = labels.zipWithIndex()                    # RDD[label, id]
+    labels = labels.map(lambda x: (x[1], int(x[0])))  # RDD[id, label]
 
+    # Create a DataFrame.
+    labels = spark.createDataFrame(labels, ['id', 'label'])
     return labels
 
 
-def split_bytes(ctx, data, no_addr=False):
-    '''Splits RDDs of the form `RDD[id, line]` into `RDD[id, (addr, byte)]`
-    where `addr` is the address of the byte, and `byte` is the value.
-
-    The input is expected to be loaded from bytes files.
-
-    Args:
-        data (RDD[id, line]): The RDD to split.
-        no_addr: Do not include the address.
-
-    Returns:
-        RDD[id, (addr, byte)] if `no_addr` is false (default).
-        RDD[id, byte] if `no_addr` is true.
+@elizabeth.udf([str])
+def split_bytes(text):
+    '''Splits the text of a bytes file into a list of bytes.
     '''
-    def split(line):
+    bytes = []
+    for line in text.split('\n'):
         try:
-            (addr, *bytes) = line.split()
-            bytes = [int(b, 16) for b in bytes]
-            if no_addr: return bytes
-            addr = int(addr, 16)
-            return [(addr+i, b) for i,b in enumerate(bytes)]
+            (addr, *vals) = line.split()
+            bytes += vals
         except ValueError:
             # ValueError occurs on invalid hex,
             # e.g. the missing byte symbol '??'.
             # For now, we discard the whole line. See #6.
             # https://github.com/dsp-uga/elizabeth/issues/6
-            return []
-    data = data.flatMapValues(split)
-
-    data = data.persist()
-    return data
+            continue
+    return bytes
 
 
-def split_asm(ctx, data):
-    '''Splits RDDs of the form `RDD[id, line]` into `RDD[id, (s, a, b, o, r)]`
-    where `s` is the segment type, `a` is the address of the instruction, `b`
-    is the big-end int value of the instruction, `o` is the opcode, and `r` is
-    the rest of the instruction.
-
-    The input is expected to be loaded from asm files.
-
-    Args:
-        data (RDD[id, line]): The RDD to split.
-
-    Returns:
-        RDD[id, (segment, addr, bytes, opcode, rest)]
+@elizabeth.udf([str])
+def split_asm(text):
+    '''Splits the text of an asm file into a list of opcodes.
     '''
+    opcodes = []
     pattern = re.compile(r'\.([a-z]+):([0-9A-F]+)((?:\s[0-9A-F]{2})+)\s+([a-z]+)(?:\s+([^;]*))?')
-
-    def match(x):
-        (id, line) = x
-        return pattern.match(line) is not None
-    data = data.filter(match)
-
-    def split(line):
-        m = pattern.match(line)
-        segment = m[1]
-        addr = int(m[2], 16)
-        bytes = parse_bytes(m[3])
-        opcode = m[4]
-        rest = m[5].strip()
-        return (segment, addr, bytes, opcode, rest)
-    data = data.mapValues(split)
-
-    data = data.persist()
-    return data
-
-
-
-def parse_bytes(bytes):
-    '''Parse strings like '0B AF 32' into big-end integers.
-    '''
-    val = 0
-    for b in bytes.split():
-        val = val << 8
-        val = val + int(b, 16)
-    return val
+    for line in text.split('\n'):
+        match = pattern.match(line)
+        if match:
+            opcode = match[4]
+            opcodes.append(opcode)
+    return opcodes
