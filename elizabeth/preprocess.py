@@ -103,6 +103,34 @@ def load_data(manifest, base='gs', kind='bytes'):
     data = spark.createDataFrame(data, ['id', 'url', 'text'])
     return data
 
+def load_lines(manifest, base='gs', kind='bytes'):
+    spark = elizabeth.session()
+    ctx = spark.sparkContext
+
+    # Special base paths
+    if base == 'https': base = 'https://storage.googleapis.com/uga-dsp/project2/data'
+    if base == 'gs': base = 'gs://uga-dsp/project2/data'
+
+    # Read the manifest as an iterator over (id, url).
+    # We use Spark to build the iterator to support hdfs etc.
+    manifest = str(manifest)  # cast to str to support pathlib.Path etc.
+    manifest = ctx.textFile(manifest)  # RDD[hash]
+    manifest = manifest.map(hash_to_url(base=base, kind=kind))  # RDD[url]
+    manifest = manifest.zipWithIndex()  # RDD[url, id]
+    manifest = manifest.map(lambda x: (x[1], x[0]))  # RDD[id, url]
+    manifest = manifest.toLocalIterator()
+
+    lines = ctx.emptyRDD()
+    id_mapper = lambda id: lambda x: (id, x)
+    for id, url in manifest:
+        document_lines = ctx.textFile(url)\
+            .filter(lambda x: '??' not in x)\
+            .map(lambda line: line.split()[1:]) \
+            .map(id_mapper(id))
+        lines = lines.union(document_lines)
+
+    return lines.toDF(['id', 'line'])
+
 
 def load_labels(labels):
     '''Load labels from a label file into a DataFrame.
