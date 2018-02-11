@@ -16,7 +16,7 @@ class NaiveBayes:
         self._idf = None
         self._model = None
 
-    def fit(self, x, y, data_col='bytes'):
+    def fit(self, x, y, data_col='tokens'):
         '''Fit the model to some data.
 
         The data (x) and labels (y) are joind on the column `id`.
@@ -72,14 +72,14 @@ def main(train_x, train_y, test_x, test_y=None, base='gs', asm=False):
 
     if asm:
         train_x = elizabeth.preprocess.load_data(train_x, base=base, kind='asm')
-        train_x = train_x.withColumn('asm', elizabeth.preprocess.split_asm(train_x.text))
+        train_x = train_x.withColumn('tokens', elizabeth.preprocess.split_asm(train_x.text))
         test_x = elizabeth.preprocess.load_data(test_x, base=base, kind='asm')
-        test_x = test_x.withColumn('asm', elizabeth.preprocess.split_asm(test_x.text))
+        test_x = test_x.withColumn('tokens', elizabeth.preprocess.split_asm(test_x.text))
     else:
         train_x = elizabeth.preprocess.load_data(train_x, base=base, kind='bytes')
-        train_x = train_x.withColumn('bytes', elizabeth.preprocess.split_bytes(train_x.text))
+        train_x = train_x.withColumn('tokens', elizabeth.preprocess.split_bytes(train_x.text))
         test_x = elizabeth.preprocess.load_data(test_x, base=base, kind='bytes')
-        test_x = test_x.withColumn('bytes', elizabeth.preprocess.split_bytes(test_x.text))
+        test_x = test_x.withColumn('tokens', elizabeth.preprocess.split_bytes(test_x.text))
 
     train_y = elizabeth.preprocess.load_labels(train_y)
     test_y = elizabeth.preprocess.load_labels(test_y) if test_y else None
