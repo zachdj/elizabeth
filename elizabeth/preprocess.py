@@ -1,6 +1,8 @@
 import re
 from pathlib import Path
 
+import pyspark
+
 import elizabeth
 
 
@@ -132,85 +134,36 @@ def load_labels(labels):
     return labels
 
 
-def split_bytes(data, no_addr=False):
-    '''Splits RDDs of the form `RDD[id, line]` into `RDD[id, (addr, byte)]`
-    where `addr` is the address of the byte, and `byte` is the value.
-
-    The input is expected to be loaded from bytes files.
-
-    Args:
-        data (RDD[id, line]): The RDD to split.
-        no_addr: Do not include the address.
-
-    Returns:
-        RDD[id, (addr, byte)] if `no_addr` is false (default).
-        RDD[id, byte] if `no_addr` is true.
+@elizabeth.udf([int])
+def split_bytes(text):
+    '''Splits the text of a bytes file into a list of integer bytes.
     '''
-    spark = elizabeth.session()
-    ctx = spark.sparkContext
-
-    def split(line):
+    bytes = []
+    for line in text.split('\n'):
         try:
-            (addr, *bytes) = line.split()
-            bytes = [int(b, 16) for b in bytes]
-            if no_addr: return bytes
+            (addr, *vals) = line.split()
+            vals = [int(b, 16) for b in vals]
+            if no_addr: return vals
             addr = int(addr, 16)
-            return [(addr+i, b) for i,b in enumerate(bytes)]
+            bytes += [(addr+i, b) for i,b in enumerate(vals)]
         except ValueError:
             # ValueError occurs on invalid hex,
             # e.g. the missing byte symbol '??'.
             # For now, we discard the whole line. See #6.
             # https://github.com/dsp-uga/elizabeth/issues/6
-            return []
-    data = data.flatMapValues(split)
-
-    data = data.persist()
-    return data
+            continue
+    return bytes
 
 
-def split_asm(data):
-    '''Splits RDDs of the form `RDD[id, line]` into `RDD[id, (s, a, b, o, r)]`
-    where `s` is the segment type, `a` is the address of the instruction, `b`
-    is the big-end int value of the instruction, `o` is the opcode, and `r` is
-    the rest of the instruction.
-
-    The input is expected to be loaded from asm files.
-
-    Args:
-        data (RDD[id, line]): The RDD to split.
-
-    Returns:
-        RDD[id, (segment, addr, bytes, opcode, rest)]
+@elizabeth.udf([str])
+def split_asm(text):
+    '''Splits the text of an asm file into a list of opcodes.
     '''
-    spark = elizabeth.session()
-    ctx = spark.sparkContext
+    opcodes = []
     pattern = re.compile(r'\.([a-z]+):([0-9A-F]+)((?:\s[0-9A-F]{2})+)\s+([a-z]+)(?:\s+([^;]*))?')
-
-    def match(x):
-        (id, line) = x
-        return pattern.match(line) is not None
-    data = data.filter(match)
-
-    def split(line):
-        m = pattern.match(line)
-        segment = m[1]
-        addr = int(m[2], 16)
-        bytes = parse_bytes(m[3])
-        opcode = m[4]
-        rest = m[5].strip()
-        return (segment, addr, bytes, opcode, rest)
-    data = data.mapValues(split)
-
-    data = data.persist()
-    return data
-
-
-
-def parse_bytes(bytes):
-    '''Parse strings like '0B AF 32' into big-end integers.
-    '''
-    val = 0
-    for b in bytes.split():
-        val = val << 8
-        val = val + int(b, 16)
-    return val
+    for line in text.split('\n'):
+        match = pattern.match(line)
+        if match:
+            opcode = match[4]
+            opcodes.append(opcode)
+    return opcodes
