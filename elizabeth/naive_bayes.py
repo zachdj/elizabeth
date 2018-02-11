@@ -19,13 +19,14 @@ class NaiveBayes:
     def fit(self, x, y, data_col='tokens'):
         '''Fit the model to some data.
 
-        The data (x) and labels (y) are joind on the column `id`.
+        The data (x) and labels (y) are joined on the column `id`.
 
         Args:
             x (DataFrame):
-                The training data. It must contain a column `id` that uniquely
-                identifies each instance, and a data column of `ArrayType(str)`
-                that provides tokens.
+                The training data.  It must contain a data column 'tokens'
+                that provides tokens from a line of text in the training set,
+                and a column 'id' that uniquely identifies the document
+                that contains that line of text.
             y (DataFrame):
                 The training labels. It must contain a column `id` that uniquely
                 identifies each instance, and a column `label` giving the label
@@ -36,16 +37,21 @@ class NaiveBayes:
         Returns:
             self
         '''
-        tf = pyspark.ml.feature.CountVectorizer(inputCol=data_col, outputCol='tf').fit(x)
-        x = tf.transform(x)
 
-        idf = pyspark.ml.feature.IDF(inputCol='tf', outputCol='tfidf').fit(x)
-        x = idf.transform(x)
+        hashingTF = pyspark.ml.feature.HashingTF(numFeatures=512, inputCol=data_col, outputCol='tf')
+        tf = hashingTF.transform(x).drop('tokens')    # computes term frequencies for each vector of tokens
+        # sum up term frequencies for each document
+        tf_summed = tf.rdd \
+            .map(lambda row: (row.id, row.tf)) \
+            .reduceByKey(lambda x, y: elizabeth.sparse_add(x, y))\
+            .toDF(['id', 'tf'])
+        idf = pyspark.ml.feature.IDF(inputCol='tf', outputCol='tfidf').fit(tf_summed)
+        tfidf = idf.transform(tf_summed).drop('tf')
 
-        x = x.join(y, on='id')
-        nb = pyspark.ml.classification.NaiveBayes(featuresCol='tfidf').fit(x)
+        labelled = tfidf.join(y, on='id')
+        nb = pyspark.ml.classification.NaiveBayes(featuresCol='tfidf').fit(labelled)
 
-        self._tf = tf
+        self._tf = hashingTF
         self._idf = idf
         self._model = nb
         return self
@@ -59,10 +65,16 @@ class NaiveBayes:
                 `ArrayType(str)` that provides tokens.
 
         Returns:
-            A new DataFrame like x with new columns.
-            TODO: what are the name(s) of the new columns?
+            A new DataFrame like x with new columns 'prediction' containing the
+            predicted class label and 'probability' containing a probability
+            vector for all class labels
         '''
-        x = self._tf.transform(x)
+        # TODO: this isn't very DRY
+        x = self._tf.transform(x).drop('tokens')
+        x = x.rdd \
+            .map(lambda row: (row.id, row.tf)) \
+            .reduceByKey(lambda x, y: elizabeth.sparse_add(x, y)) \
+            .toDF(['id', 'tf'])
         x = self._idf.transform(x)
         return self._model.transform(x)
 
@@ -76,10 +88,8 @@ def main(train_x, train_y, test_x, test_y=None, base='gs', asm=False):
         test_x = elizabeth.preprocess.load_data(test_x, base=base, kind='asm')
         test_x = test_x.withColumn('tokens', elizabeth.preprocess.split_asm(test_x.text))
     else:
-        train_x = elizabeth.preprocess.load_data(train_x, base=base, kind='bytes')
-        train_x = train_x.withColumn('tokens', elizabeth.preprocess.split_bytes(train_x.text))
-        test_x = elizabeth.preprocess.load_data(test_x, base=base, kind='bytes')
-        test_x = test_x.withColumn('tokens', elizabeth.preprocess.split_bytes(test_x.text))
+        train_x = elizabeth.preprocess.load_lines(train_x, base=base, kind='bytes')
+        test_x = elizabeth.preprocess.load_lines(test_x, base=base, kind='bytes')
 
     train_y = elizabeth.preprocess.load_labels(train_y)
     test_y = elizabeth.preprocess.load_labels(test_y) if test_y else None
@@ -90,8 +100,8 @@ def main(train_x, train_y, test_x, test_y=None, base='gs', asm=False):
         # If test_y is given, we print out a score rather than a prediction.
         # TODO: We currently print a prediction since the scoring code hasn't been written.
         predictions = nb.transform(test_x)
-        print(predictions)
+        predictions.show()
     else:
         # TODO: Print the output _exactly_ as expected by AutoLab.
         predictions = nb.transform(test_x)
-        print(predictions)
+        predictions.show()

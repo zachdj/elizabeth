@@ -1,4 +1,6 @@
 import pyspark
+from pyspark.ml.linalg import Vectors, SparseVector
+from collections import defaultdict
 
 
 def session(**kwargs):
@@ -88,3 +90,17 @@ def udf(dtype):
     '''
     dtype = data_type(dtype)
     return lambda f: pyspark.sql.functions.udf(f, dtype)
+
+
+def sparse_add(v1, v2):
+    # TODO: should this be here?
+    assert isinstance(v1, SparseVector) and isinstance(v2, SparseVector)
+    assert v1.size == v2.size
+    values = defaultdict(float)  # Dictionary with default value 0.0
+    # Add values from v1
+    for i in range(v1.indices.size):
+        values[v1.indices[i]] += v1.values[i]
+    # Add values from v2
+    for i in range(v2.indices.size):
+        values[v2.indices[i]] += v2.values[i]
+    return Vectors.sparse(v1.size, dict(values))
