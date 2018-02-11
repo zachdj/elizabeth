@@ -65,3 +65,33 @@ class NaiveBayes:
         x = self._tf.transform(x)
         x = self._idf.transform(x)
         return self._model.transform(x)
+
+
+def main(train_x, train_y, test_x, test_y=None, base='gs', asm=False):
+    nb = elizabeth.naive_bayes.NaiveBayes()
+
+    if asm:
+        train_x = elizabeth.preprocess.load_data(train_x, base=base, kind='asm')
+        train_x = train_x.withColumn('asm', elizabeth.preprocess.split_asm(train_x.text))
+        test_x = elizabeth.preprocess.load_data(test_x, base=base, kind='asm')
+        test_x = test_x.withColumn('asm', elizabeth.preprocess.split_asm(test_x.text))
+    else:
+        train_x = elizabeth.preprocess.load_data(train_x, base=base, kind='bytes')
+        train_x = train_x.withColumn('bytes', elizabeth.preprocess.split_bytes(train_x.text))
+        test_x = elizabeth.preprocess.load_data(test_x, base=base, kind='bytes')
+        test_x = test_x.withColumn('bytes', elizabeth.preprocess.split_bytes(test_x.text))
+
+    train_y = elizabeth.preprocess.load_labels(train_y)
+    test_y = elizabeth.preprocess.load_labels(test_y) if test_y else None
+
+    nb.fit(train_x, train_y)
+
+    if test_y:
+        # If test_y is given, we print out a score rather than a prediction.
+        # TODO: We currently print a prediction since the scoring code hasn't been written.
+        predictions = nb.transform(test_x)
+        print(predictions)
+    else:
+        # TODO: Print the output _exactly_ as expected by AutoLab.
+        predictions = nb.transform(test_x)
+        print(predictions)
