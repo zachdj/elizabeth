@@ -135,7 +135,7 @@ def load_labels(labels):
     return labels
 
 
-@elizabeth.udf([int])
+@elizabeth.udf([str])
 def split_bytes(text):
     '''Splits the text of a bytes file into a list of integer bytes.
     '''
@@ -143,10 +143,7 @@ def split_bytes(text):
     for line in text.split('\n'):
         try:
             (addr, *vals) = line.split()
-            vals = [int(b, 16) for b in vals]
-            if no_addr: return vals
-            addr = int(addr, 16)
-            bytes += [(addr+i, b) for i,b in enumerate(vals)]
+            bytes += vals
         except ValueError:
             # ValueError occurs on invalid hex,
             # e.g. the missing byte symbol '??'.
