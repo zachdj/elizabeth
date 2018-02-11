@@ -125,11 +125,11 @@ def load_lines(manifest, base='gs', kind='bytes'):
     rdds = [ctx.textFile(url)                               # RDD[line]
                 .map(lambda line: line.split()[1:])         # RDD[tokens]
                 .filter(lambda tokens: '??' not in tokens)  # discard lines with '??' bytes
-                .map(id_mapper(id))                         # RDD[id, line]
+                .map(id_mapper(id))                         # RDD[id, tokens]
             for id, url in manifest]
     lines = ctx.union(rdds)
 
-    return lines.toDF(['id', 'line'])
+    return lines.toDF(['id', 'tokens'])
 
 
 def load_labels(labels):
