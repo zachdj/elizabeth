@@ -28,6 +28,7 @@ def main():
     cmd.add_argument('train_y', help='path to the training labels')
     cmd.add_argument('test_x', help='path to the test set')
     cmd.add_argument('test_y', help='path to the test labels', nargs='?')
+    cmd.add_argument('--idf', help='use TF-IDF rather than plain TF', action='store_true')
     cmd.add_argument('--asm', help='use assembly opcodes instead of bytes', action='store_true')
     cmd.add_argument('--base', help='base url of the data files', default='gs')
     cmd.set_defaults(func=elizabeth.naive_bayes.main)
