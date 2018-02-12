@@ -26,6 +26,7 @@ def main(train_x, train_y, test_x, test_y=None, idf=False, base='gs', asm=False)
     # Naive Bayes : DF[id, url, text, tokens, label?, tf, tfidf, rawPrediction, probability, prediction]
     nb = NaiveBayes(featuresCol=feature, labelCol='label').fit(train)
     test = nb.transform(test)
+    test = test.withColumn('prediction', test.prediction + 1)
 
     # If labels are given for the test set, print a score.
     if test_y:
