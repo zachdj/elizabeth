@@ -169,12 +169,10 @@ def load(manifest, labels=None, base='gs', kind='bytes'):
     Returns:
         DataFrame[id: bigint, url: string, text: string, label: string]
     '''
-    x = load_data(manifest, base, kind)
-
     if labels:
-        x = x.unpersist()
+        x = load_data(manifest, base, kind).unpersist()
         y = load_labels(labels).unpersist()
         return x.join(y, on='id').persist()
 
     else:
-        return x
+        return load_data(manifest, base, kind)
