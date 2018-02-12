@@ -116,7 +116,7 @@ def load_data(manifest, base='gs', kind='bytes'):
     idf = pyspark.ml.feature.IDF(inputCol='tf', outputCol='tfidf').fit(data)
     data = idf.transform(data)
 
-    return data
+    return data.persist()
 
 
 def load_labels(labels):
@@ -150,4 +150,4 @@ def load_labels(labels):
     labels = labels.map(lambda x: (x[1], int(x[0])))  # RDD[id, label]
     labels = labels.toDF(['id', 'label'])             # DF[id, label]
 
-    return labels
+    return labels.persist()
