@@ -102,19 +102,13 @@ def load_data(manifest, base='gs', kind='bytes'):
     data = data.toDF(['id', 'url', 'text'])                         # DF[id, url, text]
 
     # Tokenization : DF[id, url, text, tokens]
-    tokenizer = pyspark.ml.feature.RegexTokenizer(inputCol='text', outputCol='tokens')
-    if kind == 'bytes':
-        tokenizer.setGaps(False)
-        tokenizer.setPattern(' [0-9A-F]{2}')
-    if kind == 'asm':
-        raise NotImplementedError()
+    tokenizer = pyspark.ml.feature.RegexTokenizer()
+    tokenizer.setInputCol('text')
+    tokenizer.setOutputCol('tokens')
+    tokenizer.setGaps(False)
+    if kind == 'bytes': tokenizer.setPattern('(?<= )[0-9A-F]{2}')
+    elif kind == 'asm': tokenizer.setPattern('(?<=\.([a-z]+):([0-9A-F]+)((?:\s[0-9A-F]{2})+)\s+)([a-z]+)')
     data = tokenizer.transform(data)
-
-    # TF-IDF : DF[id, url, text, tokens, tf, tfidf]
-    tf = pyspark.ml.feature.CountVectorizer(inputCol='tokens', outputCol='tf').fit(data)
-    data = tf.transform(data)
-    idf = pyspark.ml.feature.IDF(inputCol='tf', outputCol='tfidf').fit(data)
-    data = idf.transform(data)
 
     return data.persist()
 
