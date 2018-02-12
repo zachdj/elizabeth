@@ -1,93 +1,43 @@
-import pyspark
-import pyspark.ml.feature
-import pyspark.ml.classification
+from pyspark.sql.functions import avg
+from pyspark.ml.classification import NaiveBayes
+from pyspark.ml.feature import CountVectorizer, IDF
 
 import elizabeth
 
 
-class NaiveBayes:
-    '''A NaiveBayes model with TF-IDF.
-    '''
+def main(train_x, train_y, test_x, test_y=None, idf=False, base='gs', asm=False):
+    # Load : DF[id, url, text, tokens, label?]
+    # The DataFrames only have a labels column if labels are given.
+    kind = 'asm' if asm else 'bytes'
+    train = elizabeth.preprocess.load(train_x, train_y, base=base, kind=kind)
+    test = elizabeth.preprocess.load(test_x, test_y, base=base, kind=kind)
 
-    def __init__(self):
-        '''Initialize the model.
-        '''
-        self._tf = None
-        self._idf = None
-        self._model = None
+    # TF : DF[id, url, text, tokens, label?, tf]
+    tf = CountVectorizer(inputCol='tokens', outputCol='tf').fit(train)
+    train, test = tf.transform(train), tf.transform(test)
+    feature = 'tf'
 
-    def fit(self, x, y, data_col='tokens'):
-        '''Fit the model to some data.
+    # IDF : DF[id, url, text, tokens, label?, tf, tfidf]
+    if idf:
+        idf = IDF(inputCol='tf', outputCol='tfidf').fit(train)
+        train, test = idf.transform(train), idf.transform(test)
+        feature = 'tfidf'
 
-        The data (x) and labels (y) are joind on the column `id`.
+    # Naive Bayes : DF[id, url, text, tokens, label?, tf, tfidf, rawPrediction, probability, prediction]
+    nb = NaiveBayes(featuresCol=feature, labelCol='label').fit(train)
+    test = nb.transform(test)
+    test = test.withColumn('prediction', test.prediction + 1)
 
-        Args:
-            x (DataFrame):
-                The training data. It must contain a column `id` that uniquely
-                identifies each instance, and a data column of `ArrayType(str)`
-                that provides tokens.
-            y (DataFrame):
-                The training labels. It must contain a column `id` that uniquely
-                identifies each instance, and a column `label` giving the label
-                of each instance.
-            data_col (str):
-                The name of the data column.
-
-        Returns:
-            self
-        '''
-        tf = pyspark.ml.feature.CountVectorizer(inputCol=data_col, outputCol='tf').fit(x)
-        x = tf.transform(x)
-
-        idf = pyspark.ml.feature.IDF(inputCol='tf', outputCol='tfidf').fit(x)
-        x = idf.transform(x)
-
-        x = x.join(y, on='id')
-        nb = pyspark.ml.classification.NaiveBayes(featuresCol='tfidf').fit(x)
-
-        self._tf = tf
-        self._idf = idf
-        self._model = nb
-        return self
-
-    def transform(self, x):
-        '''Transforms a dataset by adding a column of predicted labels.
-
-        Args:
-            x (DataFrame):
-                The data to transform. It must contain a data column of
-                `ArrayType(str)` that provides tokens.
-
-        Returns:
-            A new DataFrame like x with new columns.
-            TODO: what are the name(s) of the new columns?
-        '''
-        x = self._tf.transform(x)
-        x = self._idf.transform(x)
-        return self._model.transform(x)
-
-
-def main(train_x, train_y, test_x, test_y=None, base='gs', asm=False):
-    nb = elizabeth.naive_bayes.NaiveBayes()
-
-    if asm:
-        train_x = elizabeth.preprocess.load_data(train_x, base=base, kind='asm')
-        test_x = elizabeth.preprocess.load_data(test_x, base=base, kind='asm')
-    else:
-        train_x = elizabeth.preprocess.load_data(train_x, base=base, kind='bytes')
-        test_x = elizabeth.preprocess.load_data(test_x, base=base, kind='bytes')
-
-    train_y = elizabeth.preprocess.load_labels(train_y)
-    test_y = elizabeth.preprocess.load_labels(test_y) if test_y else None
-
-    nb.fit(train_x, train_y)
-
+    # If labels are given for the test set, print a score.
     if test_y:
-        # If test_y is given, we print out a score rather than a prediction.
-        # TODO: We currently print a prediction since the scoring code hasn't been written.
-        predictions = nb.transform(test_x)
-        print(predictions)
+        test = test.orderBy(test.id)
+        test = test.withColumn('correct', (test.label == test.prediction).cast('double'))
+        test = test.select(avg(test.correct))
+        print(test.show())
+
+    # If no labels are given for the test set, print predictions.
     else:
-        # TODO: Print the output _exactly_ as expected by AutoLab.
-        predictions = nb.transform(test_x)
-        print(predictions)
+        test = test.orderBy(test.id).select(test.prediction)
+        test = test.rdd.map(lambda row: int(row.prediction))
+        test = test.toLocalIterator()
+        print(*test, sep='\n')

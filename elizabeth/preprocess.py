@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 
 import pyspark
+import pyspark.ml.feature
 
 import elizabeth
 
@@ -23,7 +24,7 @@ def hash_to_url(hash=None, base='./data', kind='bytes'):
     Args:
         hash (str):
             The hash identifying a document instance.
-        base (str):
+        base (path):
             The base of the URL or path to the data.
             The data must live at '{base}/{kind}/{hash}.{kind}'
         kind (str):
@@ -65,9 +66,9 @@ def load_data(manifest, base='gs', kind='bytes'):
     guaranteed to match the order given in the manifest file.
 
     Args:
-        manifest:
+        manifest (path):
             Path or URL of the manifest file.
-        base (str):
+        base (path):
             The base of the URL or path to the data. The special strings 'gs'
             and 'https' expand to the URLs used by Data Science Practicum at
             UGA over the Google Storage and HTTPS protocols respectivly.
@@ -94,21 +95,22 @@ def load_data(manifest, base='gs', kind='bytes'):
     manifest = manifest.toLocalIterator()                       # (id, url)
 
     # Load all files in the base directoy, then join out the ones in the manifest.
-    id_mapper = lambda id: lambda x: (id, x[0], x[1])
+    prepend = lambda *args: lambda x: (*args, *x)
     data = ((id, ctx.wholeTextFiles(url)) for id, url in manifest)  # (id, RDD[url, text])
-    data = [rdd.map(id_mapper(id)) for id, rdd in data]             # [RDD[id, url, text]]
+    data = [rdd.map(prepend(id)) for id, rdd in data]               # [RDD[id, url, text]]
     data = ctx.union(data)                                          # RDD[id, url, text]
+    data = data.toDF(['id', 'url', 'text'])                         # DF[id, url, text]
 
-    # Create a DataFrame.
-    data = spark.createDataFrame(data, ['id', 'url', 'text'])
+    # Tokenization : DF[id, url, text, tokens]
+    tokenizer = pyspark.ml.feature.RegexTokenizer()
+    tokenizer.setInputCol('text')
+    tokenizer.setOutputCol('tokens')
+    tokenizer.setGaps(False)
+    if kind == 'bytes': tokenizer.setPattern('(?<= )[0-9A-F]{2}')
+    elif kind == 'asm': tokenizer.setPattern('(?<=\.([a-z]+):([0-9A-F]+)((?:\s[0-9A-F]{2})+)\s+)([a-z]+)')
+    data = tokenizer.transform(data)
 
-    # Tokenization
-    if kind == 'asm':
-        data = data.withColumn('tokens', elizabeth.preprocess.split_asm(data.text))
-    else:
-        data = data.withColumn('tokens', elizabeth.preprocess.split_bytes(data.text))
-
-    return data
+    return data.persist()
 
 
 def load_labels(labels):
@@ -125,7 +127,8 @@ def load_labels(labels):
     corresponding manifest file.
 
     Args:
-        labels: Path or URL of the label file.
+        labels (path):
+            Path or URL of the label file.
 
     Returns:
         DataFrame[id: bigint, label: string]
@@ -136,43 +139,40 @@ def load_labels(labels):
     # Cast to str to support pathlib.Path etc.
     labels = str(labels)
 
-    # Read the labels as an RDD[id, url].
+    # Read the labels as a DataFrame[id, url].
     labels = ctx.textFile(labels)                     # RDD[label]
     labels = labels.zipWithIndex()                    # RDD[label, id]
     labels = labels.map(lambda x: (x[1], int(x[0])))  # RDD[id, label]
+    labels = labels.toDF(['id', 'label'])             # DF[id, label]
 
-    # Create a DataFrame.
-    labels = spark.createDataFrame(labels, ['id', 'label'])
-    return labels
+    return labels.persist()
 
 
-@elizabeth.udf([str])
-def split_bytes(text):
-    '''Splits the text of a bytes file into a list of bytes.
+def load(manifest, labels=None, base='gs', kind='bytes'):
+    '''Load data and labels into a single DataFrame.
+
+    Labels need not be given. In that case, the result will not have a
+    label column.
+
+    Args:
+        manifest (path):
+            Path to the manifest file for the data.
+        labels (path):
+            Path to the label file for the data.
+        base (path):
+            The base path to the data files. The special strings 'gs' and
+            'https' expand to the URLs used by Data Science Practicum at UGA
+            over the Google Storage and HTTPS protocols respectivly.
+        kind (str):
+            The kind of file to use, either 'bytes' or 'asm'.
+
+    Returns:
+        DataFrame[id: bigint, url: string, text: string, label: string]
     '''
-    bytes = []
-    for line in text.split('\n'):
-        try:
-            (addr, *vals) = line.split()
-            bytes += vals
-        except ValueError:
-            # ValueError occurs on invalid hex,
-            # e.g. the missing byte symbol '??'.
-            # For now, we discard the whole line. See #6.
-            # https://github.com/dsp-uga/elizabeth/issues/6
-            continue
-    return bytes
+    if labels:
+        x = load_data(manifest, base, kind).unpersist()
+        y = load_labels(labels).unpersist()
+        return x.join(y, on='id').persist()
 
-
-@elizabeth.udf([str])
-def split_asm(text):
-    '''Splits the text of an asm file into a list of opcodes.
-    '''
-    opcodes = []
-    pattern = re.compile(r'\.([a-z]+):([0-9A-F]+)((?:\s[0-9A-F]{2})+)\s+([a-z]+)(?:\s+([^;]*))?')
-    for line in text.split('\n'):
-        match = pattern.match(line)
-        if match:
-            opcode = match[4]
-            opcodes.append(opcode)
-    return opcodes
+    else:
+        return load_data(manifest, base, kind)
