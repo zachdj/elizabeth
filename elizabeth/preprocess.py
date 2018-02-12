@@ -151,3 +151,15 @@ def load_labels(labels):
     labels = labels.toDF(['id', 'label'])             # DF[id, label]
 
     return labels.persist()
+
+
+def load(manifest, labels=None, base='gs', kind='bytes'):
+    x = load_data(manifest, base, kind)
+
+    if labels:
+        x = x.unpersist()
+        y = load_labels(labels).unpersist()
+        return x.join(y, on='id').persist()
+
+    else:
+        return x
