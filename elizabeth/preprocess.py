@@ -24,7 +24,7 @@ def hash_to_url(hash=None, base='./data', kind='bytes'):
     Args:
         hash (str):
             The hash identifying a document instance.
-        base (str):
+        base (path):
             The base of the URL or path to the data.
             The data must live at '{base}/{kind}/{hash}.{kind}'
         kind (str):
@@ -66,9 +66,9 @@ def load_data(manifest, base='gs', kind='bytes'):
     guaranteed to match the order given in the manifest file.
 
     Args:
-        manifest:
+        manifest (path):
             Path or URL of the manifest file.
-        base (str):
+        base (path):
             The base of the URL or path to the data. The special strings 'gs'
             and 'https' expand to the URLs used by Data Science Practicum at
             UGA over the Google Storage and HTTPS protocols respectivly.
@@ -127,7 +127,8 @@ def load_labels(labels):
     corresponding manifest file.
 
     Args:
-        labels: Path or URL of the label file.
+        labels (path):
+            Path or URL of the label file.
 
     Returns:
         DataFrame[id: bigint, label: string]
@@ -148,6 +149,26 @@ def load_labels(labels):
 
 
 def load(manifest, labels=None, base='gs', kind='bytes'):
+    '''Load data and labels into a single DataFrame.
+
+    Labels need not be given. In that case, the result will not have a
+    label column.
+
+    Args:
+        manifest (path):
+            Path to the manifest file for the data.
+        labels (path):
+            Path to the label file for the data.
+        base (path):
+            The base path to the data files. The special strings 'gs' and
+            'https' expand to the URLs used by Data Science Practicum at UGA
+            over the Google Storage and HTTPS protocols respectivly.
+        kind (str):
+            The kind of file to use, either 'bytes' or 'asm'.
+
+    Returns:
+        DataFrame[id: bigint, url: string, text: string, label: string]
+    '''
     x = load_data(manifest, base, kind)
 
     if labels:
