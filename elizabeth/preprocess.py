@@ -95,9 +95,9 @@ def load_data(manifest, base='gs', kind='bytes'):
     manifest = manifest.toLocalIterator()                       # (id, url)
 
     # Load all files in the base directoy, then join out the ones in the manifest.
-    id_mapper = lambda id: lambda x: (id, x[0], x[1])
+    prepend = lambda *args: lambda x: (*args, *x)
     data = ((id, ctx.wholeTextFiles(url)) for id, url in manifest)  # (id, RDD[url, text])
-    data = [rdd.map(id_mapper(id)) for id, rdd in data]             # [RDD[id, url, text]]
+    data = [rdd.map(prepend(id)) for id, rdd in data]               # [RDD[id, url, text]]
     data = ctx.union(data)                                          # RDD[id, url, text]
     data = data.toDF(['id', 'url', 'text'])                         # DF[id, url, text]
 
