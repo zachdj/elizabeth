@@ -1,3 +1,4 @@
+from pyspark.sql.functions import avg
 from pyspark.ml.classification import NaiveBayes
 
 import elizabeth
@@ -9,13 +10,18 @@ def main(train_x, train_y, test_x, test_y=None, base='gs', asm=False):
     train = elizabeth.preprocess.load(train_x, train_y, base=base, kind=kind)
     test = elizabeth.preprocess.load(test_x, test_y, base=base, kind=kind)
     nb = NaiveBayes(featuresCol='tfidf', labelCol='label').fit(train)
+    test = nb.transform(test)
 
+    # If labels are given for the test set, print a score.
     if test_y:
-        # If test_y is given, we print out a score rather than a prediction.
-        raise NotImplementedError()
+        test = test.orderBy(test.id)
+        test = test.withColumn('correct', (test.label == test.prediction).cast('double'))
+        test = test.select(avg(test.correct))
+        print(test.show())
+
+    # If no labels are given for the test set, print predictions.
     else:
-        # TODO: Print the output _exactly_ as expected by AutoLab.
-        test = nb.transform(test)
-        test = test.drop('text', 'tokens', 'tf', 'tfidf')
-        h = test.orderBy('id').collect()
-        print(*h, sep='\n')
+        test = test.orderBy(test.id).select(test.prediction)
+        test = test.rdd.map(lambda row: int(row.prediction))
+        test = test.toLocalIterator()
+        print(*test, sep='\n')
