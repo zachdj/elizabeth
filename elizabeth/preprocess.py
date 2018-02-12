@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 
 import pyspark
+import pyspark.ml.feature
 
 import elizabeth
 
@@ -98,15 +99,22 @@ def load_data(manifest, base='gs', kind='bytes'):
     data = ((id, ctx.wholeTextFiles(url)) for id, url in manifest)  # (id, RDD[url, text])
     data = [rdd.map(id_mapper(id)) for id, rdd in data]             # [RDD[id, url, text]]
     data = ctx.union(data)                                          # RDD[id, url, text]
+    data = data.toDF(['id', 'url', 'text'])                         # DF[id, url, text]
 
-    # Create a DataFrame.
-    data = spark.createDataFrame(data, ['id', 'url', 'text'])
-
-    # Tokenization
+    # Tokenization : DF[id, url, text, tokens]
+    tokenizer = pyspark.ml.feature.RegexTokenizer(inputCol='text', outputCol='tokens')
+    if kind == 'bytes':
+        tokenizer.setGaps(False)
+        tokenizer.setPattern(' [0-9A-F]{2}')
     if kind == 'asm':
-        data = data.withColumn('tokens', elizabeth.preprocess.split_asm(data.text))
-    else:
-        data = data.withColumn('tokens', elizabeth.preprocess.split_bytes(data.text))
+        raise NotImplementedError()
+    data = tokenizer.transform(data)
+
+    # TF-IDF : DF[id, url, text, tokens, tf, tfidf]
+    tf = pyspark.ml.feature.CountVectorizer(inputCol='tokens', outputCol='tf').fit(data)
+    data = tf.transform(data)
+    idf = pyspark.ml.feature.IDF(inputCol='tf', outputCol='tfidf').fit(data)
+    data = idf.transform(data)
 
     return data
 
@@ -136,43 +144,10 @@ def load_labels(labels):
     # Cast to str to support pathlib.Path etc.
     labels = str(labels)
 
-    # Read the labels as an RDD[id, url].
+    # Read the labels as a DataFrame[id, url].
     labels = ctx.textFile(labels)                     # RDD[label]
     labels = labels.zipWithIndex()                    # RDD[label, id]
     labels = labels.map(lambda x: (x[1], int(x[0])))  # RDD[id, label]
+    labels = labels.toDF(['id', 'label'])             # DF[id, label]
 
-    # Create a DataFrame.
-    labels = spark.createDataFrame(labels, ['id', 'label'])
     return labels
-
-
-@elizabeth.udf([str])
-def split_bytes(text):
-    '''Splits the text of a bytes file into a list of bytes.
-    '''
-    bytes = []
-    for line in text.split('\n'):
-        try:
-            (addr, *vals) = line.split()
-            bytes += vals
-        except ValueError:
-            # ValueError occurs on invalid hex,
-            # e.g. the missing byte symbol '??'.
-            # For now, we discard the whole line. See #6.
-            # https://github.com/dsp-uga/elizabeth/issues/6
-            continue
-    return bytes
-
-
-@elizabeth.udf([str])
-def split_asm(text):
-    '''Splits the text of an asm file into a list of opcodes.
-    '''
-    opcodes = []
-    pattern = re.compile(r'\.([a-z]+):([0-9A-F]+)((?:\s[0-9A-F]{2})+)\s+([a-z]+)(?:\s+([^;]*))?')
-    for line in text.split('\n'):
-        match = pattern.match(line)
-        if match:
-            opcode = match[4]
-            opcodes.append(opcode)
-    return opcodes
