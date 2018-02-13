@@ -203,9 +203,7 @@ class Preprocessor:
         if self.is_root: return x
         x = self._prev.fit(x)
         if self._estimator is not None:
-            est = self._estimator
-            params = {est.inputCol:'features', est.outputCol:'transform'}
-            self._model = est.fit(x, params)
+            self._model = self._estimator.fit(x)
         return self._transform(x)
 
     def transform(self, x):
@@ -220,10 +218,17 @@ class Preprocessor:
         x = x.withColumnRenamed('transform', 'features')
         return x
 
+    def ngram(self, n):
+        n = int(n)
+        assert n > 0
+        if n == 1: return self
+        ngram = pyspark.ml.feature.NGram(n=n, inputCol='features', outputCol='transform')
+        return self._extend(model=ngram)
+
     def tf(self):
-        tf = pyspark.ml.feature.CountVectorizer()
+        tf = pyspark.ml.feature.CountVectorizer(inputCol='features', outputCol='transform')
         return self._extend(estimator=tf)
 
     def idf(self):
-        idf = pyspark.ml.feature.IDF()
+        idf = pyspark.ml.feature.IDF(inputCol='features', outputCol='transform')
         return self._extend(estimator=idf)
