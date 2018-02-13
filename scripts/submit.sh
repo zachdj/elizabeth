@@ -5,11 +5,22 @@ set -e
 CLUSTER="elizabeth-${RANDOM}"
 REGION="us-east1"
 ZONE="us-east1-d"
+DRIVER_CORES='4'
+DRIVER_MEMORY='6g'
+EXECUTOR_CORES='4'
+EXECUTOR_MEMORY='6g'
+WORKER_MEMORY='4g'
+
 echo "==> INFO"
 echo "name:    $CLUSTER"
 echo "region:  $REGION"
 echo "zone:    $ZONE"
 echo "command: $@"
+echo "spark.driver.cores:          $DRIVER_CORES"
+echo "spark.driver.memory:         $DRIVER_MEMORY"
+echo "spark.executor.cores:        $EXECUTOR_CORES"
+echo "spark.executor.memory:       $EXECUTOR_MEMORY"
+echo "spark.python.worker.memory:  $WORKER_MEMORY"
 echo
 
 # Compile the module
@@ -29,10 +40,16 @@ echo
 
 # Submit the job
 echo "==> Submitting job: $@"
+PROPERTIES="spark.driver.cores=$DRIVER_CORES"
+PROPERTIES+=",spark.driver.memory=$DRIVER_MEMORY"
+PROPERTIES+=",spark.executor.cores=$EXECUTOR_CORES"
+PROPERTIES+=",spark.executor.memory=$EXECUTOR_MEMORY"
+PROPERTIES+=",spark.python.worker.memory=$WORKER_MEMORY"
 gcloud dataproc jobs submit pyspark \
 	--cluster $CLUSTER \
 	--region $REGION \
 	--driver-log-levels root=FATAL \
+	--properties $PROPERTIES \
 	--py-files ./dist/elizabeth-0.1.0.dev0-py3.6.egg \
 	./scripts/driver.py \
 	-- $@
