@@ -104,7 +104,7 @@ def load_data(manifest, base='gs', kind='bytes'):
     # Tokenization : DF[id, url, text, tokens]
     tokenizer = pyspark.ml.feature.RegexTokenizer()
     tokenizer.setInputCol('text')
-    tokenizer.setOutputCol('tokens')
+    tokenizer.setOutputCol('features')
     tokenizer.setGaps(False)
     if kind == 'bytes': tokenizer.setPattern('(?<= )[0-9A-F]{2}')
     elif kind == 'asm': tokenizer.setPattern('(?<=\.([a-z]+):([0-9A-F]+)((?:\s[0-9A-F]{2})+)\s+)([a-z]+)')
@@ -176,3 +176,54 @@ def load(manifest, labels=None, base='gs', kind='bytes'):
 
     else:
         return load_data(manifest, base, kind)
+
+
+class Preprocessor:
+    def __init__(self):
+        self.extended = False  # Can't extend a preprocessor twice
+        self._prev = None  # Preprocessor stages are aranged in a linked-list.
+        self._estimator = None  # Estimator for this stage, has a `fit` method.
+        self._model = None  # Model for this stage, has a `transform` method.
+
+    def _extend(self, estimator=None, model=None):
+        assert estimator is not None or model is not None
+        assert self.extended is False
+        p = Preprocessor()
+        p._prev = self
+        p._estimator = estimator
+        p._model = model
+        self.extended = True
+        return p
+
+    @property
+    def is_root(self):
+        return self._prev is None
+
+    def fit(self, x):
+        if self.is_root: return x
+        x = self._prev.fit(x)
+        if self._estimator is not None:
+            est = self._estimator
+            params = {est.inputCol:'features', est.outputCol:'transform'}
+            self._model = est.fit(x, params)
+        return self._transform(x)
+
+    def transform(self, x):
+        if self.is_root: return x
+        x = self._prev.transform(x)
+        return self._transform(x)
+
+    def _transform(self, x):
+        m = self._model
+        x = m.transform(x)
+        x = x.drop('features')
+        x = x.withColumnRenamed('transform', 'features')
+        return x
+
+    def tf(self):
+        tf = pyspark.ml.feature.CountVectorizer()
+        return self._extend(estimator=tf)
+
+    def idf(self):
+        idf = pyspark.ml.feature.IDF()
+        return self._extend(estimator=idf)

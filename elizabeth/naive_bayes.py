@@ -12,19 +12,15 @@ def main(train_x, train_y, test_x, test_y=None, idf=False, base='gs', asm=False)
     train = elizabeth.preprocess.load(train_x, train_y, base=base, kind=kind)
     test = elizabeth.preprocess.load(test_x, test_y, base=base, kind=kind)
 
-    # TF : DF[id, url, text, tokens, label?, tf]
-    tf = CountVectorizer(inputCol='tokens', outputCol='tf').fit(train)
-    train, test = tf.transform(train), tf.transform(test)
-    feature = 'tf'
+    prep = elizabeth.preprocess.Preprocessor()
+    prep = prep.tf()
+    if idf: prep = prep.idf()
+    train = prep.fit(train)
+    test = prep.transform(test)
 
-    # IDF : DF[id, url, text, tokens, label?, tf, tfidf]
-    if idf:
-        idf = IDF(inputCol='tf', outputCol='tfidf').fit(train)
-        train, test = idf.transform(train), idf.transform(test)
-        feature = 'tfidf'
 
     # Naive Bayes : DF[id, url, text, tokens, label?, tf, tfidf, rawPrediction, probability, prediction]
-    nb = NaiveBayes(featuresCol=feature, labelCol='label').fit(train)
+    nb = NaiveBayes().fit(train)
     test = nb.transform(test)
     test = test.withColumn('prediction', test.prediction + 1)
 
