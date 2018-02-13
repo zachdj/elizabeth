@@ -2,7 +2,7 @@ import re
 from pathlib import Path
 
 import pyspark
-import pyspark.ml.feature
+from pyspark.ml.feature import RegexTokenizer, NGram, CountVectorizer, IDF
 
 import elizabeth
 
@@ -102,13 +102,11 @@ def load_data(manifest, base='gs', kind='bytes'):
     data = data.toDF(['id', 'url', 'text'])                         # DF[id, url, text]
 
     # Tokenization : DF[id, url, text, tokens]
-    tokenizer = pyspark.ml.feature.RegexTokenizer()
-    tokenizer.setInputCol('text')
-    tokenizer.setOutputCol('features')
-    tokenizer.setGaps(False)
+    tokenizer = RegexTokenizer(inputCol='text', outputCol='features', gaps=False)
     if kind == 'bytes': tokenizer.setPattern('(?<= )[0-9A-F]{2}')
     elif kind == 'asm': tokenizer.setPattern('(?<=\.([a-z]+):([0-9A-F]+)((?:\s[0-9A-F]{2})+)\s+)([a-z]+)')
     data = tokenizer.transform(data)
+    data = data.drop('text')
 
     return data.persist()
 
@@ -222,13 +220,13 @@ class Preprocessor:
         n = int(n)
         assert n > 0
         if n == 1: return self
-        ngram = pyspark.ml.feature.NGram(n=n, inputCol='features', outputCol='transform')
+        ngram = NGram(n=n, inputCol='features', outputCol='transform')
         return self._extend(model=ngram)
 
     def tf(self):
-        tf = pyspark.ml.feature.CountVectorizer(inputCol='features', outputCol='transform')
+        tf = CountVectorizer(inputCol='features', outputCol='transform')
         return self._extend(estimator=tf)
 
     def idf(self):
-        idf = pyspark.ml.feature.IDF(inputCol='features', outputCol='transform')
+        idf = IDF(inputCol='features', outputCol='transform')
         return self._extend(estimator=idf)
