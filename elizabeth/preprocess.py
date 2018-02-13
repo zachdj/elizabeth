@@ -1,4 +1,5 @@
 import re
+from copy import copy
 from pathlib import Path
 
 import pyspark
@@ -177,27 +178,44 @@ def load(manifest, labels=None, base='gs', kind='bytes'):
 
 
 class Preprocessor:
+    '''A preprocess pipeline.
+
+    This class is similar to `pyspark.ml.Pipeline`. The benefit is that it
+    gives us a central place to define and reuse all of our preprocess steps.
+
+    The class builds a linked-list of preprocess stages. Each stage is defined
+    by an Estimator which fits a transformer. During `fit`, the pipeline
+    starts at the root, and for each stage it creates a Transformer for that
+    stage by fitting the Estimator and transforms the data before passing it to
+    the next stage. Likewise diring `transform`, the pipeline starts at the
+    root and iterativly transforms the data.
+
+    A stage may be defined by a Transformer directly instead of an Estimator.
+    In that case, the fit for that stage is a noop.
+    '''
     def __init__(self):
-        self.extended = False  # Can't extend a preprocessor twice
+        '''Initialize a Preprocessor'''
+        self._extended = False  # Can't extend a preprocessor twice
         self._prev = None  # Preprocessor stages are aranged in a linked-list.
         self._estimator = None  # Estimator for this stage, has a `fit` method.
         self._model = None  # Model for this stage, has a `transform` method.
 
-    def _extend(self, estimator=None, model=None):
-        assert estimator is not None or model is not None
-        assert self.extended is False
-        p = Preprocessor()
-        p._prev = self
-        p._estimator = estimator
-        p._model = model
-        self.extended = True
-        return p
-
     @property
     def is_root(self):
+        '''True if this Preprocessor is the root of the pipeline.'''
         return self._prev is None
 
     def fit(self, x):
+        '''Fit the estimators in this pipeline.
+
+        Args:
+            x (DataFrame):
+                The dataframe to transform. The column named 'features' will
+                be transformed in-place to the new form.
+
+        Returns:
+            x transformed by this pipeline.
+        '''
         if self.is_root: return x
         x = self._prev.fit(x)
         if self._estimator is not None:
@@ -205,28 +223,70 @@ class Preprocessor:
         return self._transform(x)
 
     def transform(self, x):
+        '''Transform a dataframe.
+
+        Args:
+            x (DataFrame):
+                The dataframe to transform. The column named 'features' will
+                be transformed in-place to the new form.
+
+        Returns:
+            x transformed by this pipeline.
+        '''
         if self.is_root: return x
         x = self._prev.transform(x)
         return self._transform(x)
 
     def _transform(self, x):
+        '''Apllies the transformation for this stage in-place.'''
         m = self._model
         x = m.transform(x)
         x = x.drop('features')
         x = x.withColumnRenamed('transform', 'features')
         return x
 
-    def ngram(self, n):
+    def add(self, stage):
+        '''Add a new stage to the pipeline.
+
+        Args:
+            stage (Estimator or Transformer):
+                The new stage.
+        '''
+        assert self._extended is False
+        prev = copy(self)
+        self._prev = prev
+        if hasattr(stage, 'fit'):
+            self._estimator = stage
+            self._model = None
+        else:
+            self._estimator = None
+            self._model = stage
+        self._extended = True
+        return self
+
+    def ngram(self, n, **kwargs):
+        '''Add an n-grammer to the pipeline.
+        '''
         n = int(n)
         assert n > 0
         if n == 1: return self
-        ngram = NGram(n=n, inputCol='features', outputCol='transform')
-        return self._extend(model=ngram)
+        kwargs['inputCol'] = 'features'
+        kwargs['outputCol'] = 'transform'
+        ngram = NGram(n=n, **kwargs)
+        return self.add(model=ngram)
 
-    def tf(self):
-        tf = CountVectorizer(inputCol='features', outputCol='transform')
-        return self._extend(estimator=tf)
+    def tf(self, **kwargs):
+        '''Add a count vectorizer to the pipeline.
+        '''
+        kwargs['inputCol'] = 'features'
+        kwargs['outputCol'] = 'transform'
+        tf = CountVectorizer(**kwargs)
+        return self.add(estimator=tf)
 
-    def idf(self):
-        idf = IDF(inputCol='features', outputCol='transform')
-        return self._extend(estimator=idf)
+    def idf(self, **kwargs):
+        '''Add an IDF estimator to the pipeline.
+        '''
+        kwargs['inputCol'] = 'features'
+        kwargs['outputCol'] = 'transform'
+        idf = IDF(**kwargs)
+        return self.add(estimator=idf)

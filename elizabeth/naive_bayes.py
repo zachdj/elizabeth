@@ -14,9 +14,9 @@ def main(train_x, train_y, test_x, test_y=None, idf=False, ngram=1, base='gs', a
 
     # Train the preprocessor and transform the data.
     prep = elizabeth.preprocess.Preprocessor()
-    prep = prep.ngram(ngram)
-    prep = prep.tf()
-    if idf: prep = prep.idf()
+    prep.ngram(ngram)
+    prep.tf()
+    if idf: prep.idf()
     train = prep.fit(train)
     test = prep.transform(test)
 
