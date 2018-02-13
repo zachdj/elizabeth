@@ -9,11 +9,11 @@ def main(train_x, train_y, test_x, test_y=None, idf=False, ngram=1, base='gs', a
     # Load : DF[id, url, text, features, label?]
     # The DataFrames only have a labels column if labels are given.
     kind = 'asm' if asm else 'bytes'
-    train = elizabeth.preprocess.load(train_x, train_y, base=base, kind=kind)
-    test = elizabeth.preprocess.load(test_x, test_y, base=base, kind=kind)
+    train = elizabeth.load(train_x, train_y, base=base, kind=kind)
+    test = elizabeth.load(test_x, test_y, base=base, kind=kind)
 
     # Train the preprocessor and transform the data.
-    prep = elizabeth.preprocess.Preprocessor()
+    prep = elizabeth.Preprocessor()
     prep.add(NGram(n=ngram))
     prep.add(CountVectorizer())
     if idf: prep.idf(IDF())

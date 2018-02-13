@@ -1,3 +1,3 @@
 from .core import *
-from . import preprocess
+from .preprocess import load, Preprocessor
 from . import naive_bayes
