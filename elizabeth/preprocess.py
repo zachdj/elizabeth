@@ -192,6 +192,10 @@ class Preprocessor:
 
     A stage may be defined by a Transformer directly instead of an Estimator.
     In that case, the fit for that stage is a noop.
+
+    Note when adding new stages, the input column must be 'features' and the
+    output column must be 'transform'. The final 'transform' column replaces
+    the 'features' column of the input, and maintains the name 'features'.
     '''
     def __init__(self):
         '''Initialize a Preprocessor'''
