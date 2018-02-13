@@ -1,6 +1,6 @@
 from pyspark.sql.functions import avg
 from pyspark.ml.classification import NaiveBayes
-from pyspark.ml.feature import CountVectorizer, IDF
+from pyspark.ml.feature import CountVectorizer, IDF, NGram
 
 import elizabeth
 
@@ -14,9 +14,9 @@ def main(train_x, train_y, test_x, test_y=None, idf=False, ngram=1, base='gs', a
 
     # Train the preprocessor and transform the data.
     prep = elizabeth.preprocess.Preprocessor()
-    prep.ngram(ngram)
-    prep.tf()
-    if idf: prep.idf()
+    prep.add(NGram(n=ngram))
+    prep.add(CountVectorizer())
+    if idf: prep.idf(IDF())
     train = prep.fit(train)
     test = prep.transform(test)
 

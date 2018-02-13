@@ -3,7 +3,7 @@ from copy import copy
 from pathlib import Path
 
 import pyspark
-from pyspark.ml.feature import RegexTokenizer, NGram, CountVectorizer, IDF
+from pyspark.ml.feature import RegexTokenizer
 
 import elizabeth
 
@@ -180,8 +180,14 @@ def load(manifest, labels=None, base='gs', kind='bytes'):
 class Preprocessor:
     '''A preprocess pipeline.
 
-    This class is similar to `pyspark.ml.Pipeline`. The benefit is that it
-    gives us a central place to define and reuse all of our preprocess steps.
+    This class is very similar to `pyspark.ml.Pipeline`. However, a
+    Preprocessor is specifically for feature engineering steps before the
+    machine learning model. The goal is that by separating the preprocess
+    pipeline from the model, we are able to more efficiently use memory and
+    make it easier to engineer optional stages of the pipeline, e.g. those
+    controlled by command-line switches. Additionally, this class embraces
+    convention over configuration to avoid noise like `inputCol` and
+    `outputCol` arguments everywhere. Just use the defaults!
 
     The class builds a linked-list of preprocess stages. Each stage is defined
     by an Estimator which fits a transformer. During `fit`, the pipeline
@@ -203,6 +209,25 @@ class Preprocessor:
         self._prev = None  # Preprocessor stages are aranged in a linked-list.
         self._estimator = None  # Estimator for this stage, has a `fit` method.
         self._model = None  # Model for this stage, has a `transform` method.
+
+    def add(self, stage):
+        '''Add a new stage to the pipeline.
+
+        Args:
+            stage (Estimator or Transformer):
+                The new stage.
+        '''
+        assert self._extended is False
+        stage.setParams(inputCol='features', outputCol='transform')
+        self._prev = copy(self)
+        self._prev._extended = True
+        if hasattr(stage, 'fit'):
+            self._estimator = stage
+            self._model = None
+        else:
+            self._estimator = None
+            self._model = stage
+        return self
 
     @property
     def is_root(self):
@@ -248,49 +273,3 @@ class Preprocessor:
         x = x.drop('features')
         x = x.withColumnRenamed('transform', 'features')
         return x
-
-    def add(self, stage):
-        '''Add a new stage to the pipeline.
-
-        Args:
-            stage (Estimator or Transformer):
-                The new stage.
-        '''
-        assert self._extended is False
-        prev = copy(self)
-        self._prev = prev
-        if hasattr(stage, 'fit'):
-            self._estimator = stage
-            self._model = None
-        else:
-            self._estimator = None
-            self._model = stage
-        self._extended = True
-        return self
-
-    def ngram(self, n, **kwargs):
-        '''Add an n-grammer to the pipeline.
-        '''
-        n = int(n)
-        assert n > 0
-        if n == 1: return self
-        kwargs['inputCol'] = 'features'
-        kwargs['outputCol'] = 'transform'
-        ngram = NGram(n=n, **kwargs)
-        return self.add(model=ngram)
-
-    def tf(self, **kwargs):
-        '''Add a count vectorizer to the pipeline.
-        '''
-        kwargs['inputCol'] = 'features'
-        kwargs['outputCol'] = 'transform'
-        tf = CountVectorizer(**kwargs)
-        return self.add(estimator=tf)
-
-    def idf(self, **kwargs):
-        '''Add an IDF estimator to the pipeline.
-        '''
-        kwargs['inputCol'] = 'features'
-        kwargs['outputCol'] = 'transform'
-        idf = IDF(**kwargs)
-        return self.add(estimator=idf)
