@@ -35,7 +35,7 @@ def main():
     cmd.set_defaults(func=elizabeth.naive_bayes.main)
 
     # elizabeth nb <train_x> <train_y> <test_x> [<test_y>]
-    cmd = subcommands.add_parser('gbt', description='gradient boosted trees', argument_default=argparse.SUPPRESS)
+    cmd = subcommands.add_parser('rf', description='random forest', argument_default=argparse.SUPPRESS)
     cmd.add_argument('train_x', help='path to the training set')
     cmd.add_argument('train_y', help='path to the training labels')
     cmd.add_argument('test_x', help='path to the test set')
