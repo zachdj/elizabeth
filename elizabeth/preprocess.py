@@ -1,8 +1,9 @@
 import re
+from copy import copy
 from pathlib import Path
 
 import pyspark
-import pyspark.ml.feature
+from pyspark.ml.feature import RegexTokenizer
 
 import elizabeth
 
@@ -102,13 +103,11 @@ def load_data(manifest, base='gs', kind='bytes'):
     data = data.toDF(['id', 'url', 'text'])                         # DF[id, url, text]
 
     # Tokenization : DF[id, url, text, tokens]
-    tokenizer = pyspark.ml.feature.RegexTokenizer()
-    tokenizer.setInputCol('text')
-    tokenizer.setOutputCol('tokens')
-    tokenizer.setGaps(False)
+    tokenizer = RegexTokenizer(inputCol='text', outputCol='features', gaps=False)
     if kind == 'bytes': tokenizer.setPattern('(?<= )[0-9A-F]{2}')
     elif kind == 'asm': tokenizer.setPattern('(?<=\.([a-z]+):([0-9A-F]+)((?:\s[0-9A-F]{2})+)\s+)([a-z]+)')
     data = tokenizer.transform(data)
+    data = data.drop('text')
 
     return data.persist()
 
@@ -176,3 +175,101 @@ def load(manifest, labels=None, base='gs', kind='bytes'):
 
     else:
         return load_data(manifest, base, kind)
+
+
+class Preprocessor:
+    '''A preprocess pipeline.
+
+    This class is very similar to `pyspark.ml.Pipeline`. However, a
+    Preprocessor is specifically for feature engineering steps before the
+    machine learning model. The goal is that by separating the preprocess
+    pipeline from the model, we are able to more efficiently use memory and
+    make it easier to engineer optional stages of the pipeline, e.g. those
+    controlled by command-line switches. Additionally, this class embraces
+    convention over configuration to avoid noise like `inputCol` and
+    `outputCol` arguments everywhere. Just use the defaults!
+
+    The class builds a linked-list of preprocess stages. Each stage is defined
+    by an Estimator which fits a transformer. During `fit`, the pipeline
+    starts at the root, and for each stage it creates a Transformer for that
+    stage by fitting the Estimator and transforms the data before passing it to
+    the next stage. Likewise diring `transform`, the pipeline starts at the
+    root and iterativly transforms the data.
+
+    A stage may be defined by a Transformer directly instead of an Estimator.
+    In that case, the fit for that stage is a noop.
+
+    Note when adding new stages, the input column must be 'features' and the
+    output column must be 'transform'. The final 'transform' column replaces
+    the 'features' column of the input, and maintains the name 'features'.
+    '''
+    def __init__(self):
+        '''Initialize a Preprocessor'''
+        self._extended = False  # Can't extend a preprocessor twice
+        self._prev = None  # Preprocessor stages are aranged in a linked-list.
+        self._estimator = None  # Estimator for this stage, has a `fit` method.
+        self._model = None  # Model for this stage, has a `transform` method.
+
+    def add(self, stage):
+        '''Add a new stage to the pipeline.
+
+        Args:
+            stage (Estimator or Transformer):
+                The new stage.
+        '''
+        assert self._extended is False
+        stage.setParams(inputCol='features', outputCol='transform')
+        self._prev = copy(self)
+        self._prev._extended = True
+        if hasattr(stage, 'fit'):
+            self._estimator = stage
+            self._model = None
+        else:
+            self._estimator = None
+            self._model = stage
+        return self
+
+    @property
+    def is_root(self):
+        '''True if this Preprocessor is the root of the pipeline.'''
+        return self._prev is None
+
+    def fit(self, x):
+        '''Fit the estimators in this pipeline.
+
+        Args:
+            x (DataFrame):
+                The dataframe to transform. The column named 'features' will
+                be transformed in-place to the new form.
+
+        Returns:
+            x transformed by this pipeline.
+        '''
+        if self.is_root: return x
+        x = self._prev.fit(x)
+        if self._estimator is not None:
+            self._model = self._estimator.fit(x)
+        return self._transform(x)
+
+    def transform(self, x):
+        '''Transform a dataframe.
+
+        Args:
+            x (DataFrame):
+                The dataframe to transform. The column named 'features' will
+                be transformed in-place to the new form.
+
+        Returns:
+            x transformed by this pipeline.
+        '''
+        if self.is_root: return x
+        x = self._prev.transform(x)
+        return self._transform(x)
+
+    def _transform(self, x):
+        '''Apllies the transformation for this stage in-place.'''
+        m = self._model
+        x = m.transform(x)
+        x = x.drop('features')
+        x = x.withColumnRenamed('transform', 'features')
+        return x
