@@ -15,7 +15,7 @@ def main(train_x, train_y, test_x, test_y=None, idf=False, ngram=1, base='gs', a
 
     # convert the string labels to numeric indices
     # the handleInvalid param allows the label indexer to deal with labels that weren't seen during fitting
-    label_indexer = StringIndexer(inputCol='label', outputCol='indexedLabel', handleInvalid="error")
+    label_indexer = StringIndexer(inputCol='label', outputCol='indexedLabel', handleInvalid="skip")
     label_indexer = label_indexer.fit(train)
     train = label_indexer.transform(train)
     # the test set won't always have labels
