@@ -62,5 +62,24 @@ def main(train_x, train_y, test_x, test_y=None, base='gs'):
     test = assembler.transform(test)\
         .drop('twoGramCounts', 'fourGramCounts')
 
-    print(train.show())
-    print(test.show())
+    # instantiate a binary GBT as the base classifier for One-vs-Many
+    gbt = GBTClassifier(labelCol='indexedLabel', featuresCol='features', maxIter=20, maxDepth=10)
+
+    # create and train OneVsRest classifier
+    one_v_rest = OneVsRest(classifier=gbt)
+    model = one_v_rest.fit(train)
+    prediction = model.transform(test)
+    prediction = index_labeller.transform(prediction)  # DF[id, url, ... prediction, predictedClass]
+
+    # If labels are given for the test set, print a score.s
+    if test_y:
+        evaluator = MulticlassClassificationEvaluator(labelCol="indexedLabel", predictionCol='prediction', metricName='accuracy')
+        accuracy = evaluator.evaluate(prediction)
+        print("\n\tAccuracy on test set: %0.6f\n" % accuracy)
+
+    # If no labels are given for the test set, print predictions.
+    else:
+        prediction = prediction.orderBy(prediction.id).select(prediction.predictedClass)
+        prediction = prediction.rdd.map(lambda prediction: int(prediction.predictedClass))
+        prediction = prediction.toLocalIterator()
+        print(*prediction, sep='\n')
