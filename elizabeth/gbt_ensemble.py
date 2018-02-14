@@ -59,6 +59,8 @@ def main(train_x, train_y, test_x, test_y=None, base='gs'):
     assembler = VectorAssembler(inputCols=['twoGramCounts', 'fourGramCounts'], outputCol='features')
     train = assembler.transform(train)\
         .drop('twoGramCounts', 'fourGramCounts')
+    test = assembler.transform(test)\
+        .drop('twoGramCounts', 'fourGramCounts')
 
     print(train.show())
     print(test.show())
