@@ -41,7 +41,7 @@ def main():
     cmd.add_argument('test_x', help='path to the test set')
     cmd.add_argument('test_y', help='path to the test labels', nargs='?')
     cmd.add_argument('--base', help='base url of the data files', default='gs')
-    cmd.set_defaults(func=elizabeth.gbt_ensemble.main)
+    cmd.set_defaults(func=elizabeth.tree_ensemble.main)
 
     # Each subcommand gives an `args.func`.
     # Call that function and pass the rest of `args` as kwargs.

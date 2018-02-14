@@ -1,5 +1,5 @@
 """
-    Ensemble of One-vs-Rest Gradient-Boosted Trees.
+    Random Forest classifier
 
     Features:
         - frequencies of the top 500 bigrams from the binary files
@@ -7,7 +7,7 @@
 """
 
 from pyspark.sql.functions import avg
-from pyspark.ml.classification import GBTClassifier, OneVsRest
+from pyspark.ml.classification import RandomForestClassifier, OneVsRest
 from pyspark.ml.evaluation import MulticlassClassificationEvaluator
 from pyspark.ml.feature import VectorAssembler, CountVectorizer, NGram, StringIndexer, IndexToString
 
@@ -63,11 +63,9 @@ def main(train_x, train_y, test_x, test_y=None, base='gs'):
         .drop('twoGramCounts', 'fourGramCounts')
 
     # instantiate a binary GBT as the base classifier for One-vs-Many
-    gbt = GBTClassifier(labelCol='indexedLabel', featuresCol='features', maxIter=20, maxDepth=10)
-
-    # create and train OneVsRest classifier
-    one_v_rest = OneVsRest(classifier=gbt)
-    model = one_v_rest.fit(train)
+    rf = RandomForestClassifier(labelCol='indexedLabel', featuresCol='features',
+                                 numTrees=20, maxDepth=10, minInfoGain=0.0)
+    model = rf.fit(train)
     prediction = model.transform(test)
     prediction = index_labeller.transform(prediction)  # DF[id, url, ... prediction, predictedClass]
 
