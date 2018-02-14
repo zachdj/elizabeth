@@ -6,10 +6,12 @@ import elizabeth
 
 
 def main(train_x, train_y, test_x, test_y=None, idf=False, ngram=1, base='gs', asm=False):
+    # Load : DF[id, url, features, label?]
     # The DataFrames only have a labels column if labels are given.
+    # We drop the text, since Naive Bayes doesn't use it and we already have all the tokens
     kind = 'asm' if asm else 'bytes'
-    train = elizabeth.load(train_x, train_y, base=base, kind=kind)
-    test = elizabeth.load(test_x, test_y, base=base, kind=kind)
+    train = elizabeth.load(train_x, train_y, base=base, kind=kind).drop('text')
+    test = elizabeth.load(test_x, test_y, base=base, kind=kind).drop('text')
 
     # convert the string labels to numeric indices
     # the handleInvalid param allows the label indexer to deal with labels that weren't seen during fitting
