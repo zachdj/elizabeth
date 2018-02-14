@@ -14,9 +14,9 @@ def main(train_x, train_y, test_x, test_y=None, idf=False, ngram=1, base='gs', a
 
     # Train the preprocessor and transform the data.
     prep = elizabeth.Preprocessor()
-    prep.add(NGram(n=ngram))
+    prep.add(NGram(n=int(ngram)))
     prep.add(CountVectorizer())
-    if idf: prep.idf(IDF())
+    if idf: prep.add(IDF())
     train = prep.fit(train)
     test = prep.transform(test)
 
