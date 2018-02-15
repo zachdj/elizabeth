@@ -11,10 +11,12 @@ EXECUTOR_MEMORY='6g'
 WORKER_MEMORY='4g'
 
 echo "==> INFO"
-echo "name:    $CLUSTER"
+echo "command: $@"
+echo "--> Google Cloud"
+echo "cluster: $CLUSTER"
 echo "region:  $REGION"
 echo "zone:    $ZONE"
-echo "command: $@"
+echo "--> Spark"
 echo "spark.driver.cores:          $DRIVER_CORES"
 echo "spark.driver.memory:         $DRIVER_MEMORY"
 echo "spark.executor.cores:        $EXECUTOR_CORES"
