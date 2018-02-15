@@ -90,7 +90,7 @@ def main(train_x, train_y, test_x, test_y=None, base='gs'):
 
     # create and train a Random Forest classifier
     rf = RandomForestClassifier(labelCol='indexedLabel', featuresCol='features',
-                                 numTrees=10, maxDepth=5, minInfoGain=0.0)
+                                 numTrees=20, maxDepth=10, minInfoGain=0.0, seed=12345)
     model = rf.fit(train)
     prediction = model.transform(test)
     prediction = index_labeller.transform(prediction)  # DF[id, url, ... prediction, predictedClass]
