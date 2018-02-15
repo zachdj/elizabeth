@@ -3,7 +3,7 @@ from copy import copy
 from pathlib import Path
 
 import pyspark
-from pyspark.ml.feature import RegexTokenizer
+from pyspark.ml.feature import RegexTokenizer, CountVectorizer
 
 import elizabeth
 
@@ -175,6 +175,81 @@ def load(manifest, labels=None, base='gs', kind='bytes'):
 
     else:
         return load_data(manifest, base, kind)
+
+
+def load_asm_tree_features(manifest, base='gs'):
+    """ Loads useful features from asm documents into a DataFrame
+
+    Features:
+        - list of section titles (HEADER, .data, .idata, .rsrc, etc) found in the document
+        - list of opcodes found in the document
+
+    :param manifest: path to the manifest file for the data
+    :param base: The base path to the data files. The special strings 'gs' and
+            'https' expand to the URLs used by Data Science Practicum at UGA
+            over the Google Storage and HTTPS protocols respectivly.
+
+    :return DataFrame[id, sections, opcodes]
+    """
+    spark = elizabeth.session()
+    ctx = spark.sparkContext
+
+    # Special base paths
+    if base == 'https': base = 'https://storage.googleapis.com/uga-dsp/project2/data'
+    if base == 'gs': base = 'gs://uga-dsp/project2/data'
+
+    # Read the manifest as an iterator over (id, url).
+    # We use Spark to build the iterator to support hdfs etc.
+    manifest = str(manifest)  # cast to str to support pathlib.Path etc.
+    manifest = ctx.textFile(manifest)  # RDD[hash]
+    manifest = manifest.map(hash_to_url(base=base, kind='asm'))  # RDD[url]
+    manifest = manifest.zipWithIndex()  # RDD[url, id]
+    manifest = manifest.map(lambda x: (x[1], x[0]))  # RDD[id, url]
+    manifest = manifest.toLocalIterator()  # (id, url)
+
+    # Load all files in the base directoy, then join out the ones in the manifest.
+    prepend = lambda *args: lambda x: (*args, *x)
+    data = ((id, ctx.wholeTextFiles(url)) for id, url in manifest)  # (id, RDD[url, text])
+    data = [rdd.map(prepend(id)) for id, rdd in data]  # [RDD[id, url, text]]
+    data = ctx.union(data)  # RDD[id, url, text]
+    data = data.toDF(['id', 'url', 'text'])  # DF[id, url, text]
+
+    # Tokenization : DF[id, url, text, tokens]
+    section_tokenizer = RegexTokenizer(inputCol='text', outputCol='sections', gaps=False)
+    section_tokenizer.setPattern(r'\.?\w+:(?=[0-9A-F]{8}\s)')
+    data = section_tokenizer.transform(data)
+    opcode_tokenizer = RegexTokenizer(inputCol='text', outputCol='opcodes', gaps=False)
+    opcode_tokenizer.setPattern(r'(?<=\s)(sti|pmulhw|cmpsb|dec|setnle|paddusw|ins|psadbw|rdtsc|shld|xchg|daa|psubsb|fldln|unk'
+                                 r'|cmovle|fyl|out|movdq|fcos|cmpxchg|loope|setnb|setz|iret|das|ror|f|shrd|prefetcht|fist'
+                                 r'|fbld|fisubr|mulpd|psubusw|movd|pushf|jl|psrlq|jnz|movlps|pcmpgtb|stosb|pmullw|tbyte'
+                                 r'|cmova|pop|jge|movlpd|psrlw|fiadd|fsubp|cpuid|fxch|jmp|jnp|cy|movdqa|pavgusb|rcl|mov'
+                                 r'|hlt|inc|pandn|bsf|movdqu|stmxcsr|frndint|fucompp|fnstenv|wrmsr|jp|cli|lodsw|riid'
+                                 r'|mul|int|sar|setl|psrld|cmovb|pmulhuw|clc|psrldq|pmaddwd|scasb|movapd|outsw|movq'
+                                 r'|setbe|rcr|aad|bswap|fidivr|fisttp|xor|fcom|movaps|pusha|frstor|pshufhw|packuswb'
+                                 r'|outsd|fst|psubsw|byte|scasd|movntdq|andpd|rep|fsub|stc|fbstp|setnz|prefetchnta'
+                                 r'|jle|fsubrp|fndisi|fnclex|cmc|fmulp|psrad|vmovdqu|aam|stru|fcmovnbe|movntq|unpckhpd'
+                                 r'|paddb|psllw|div|fmul|fnstcw|mulsd|pcmpeqw|fxsave|femms|fcomip|fld|adc|pavgb|punpckhbw'
+                                 r'|fldz|ldmxcsr|jbe|bound|in|cld|psubw|a|pminsw|fldlg|paddsb|pxor|seto|paddsw|punpckhdq'
+                                 r'|lea|ja|icebp|cmpps|fistp|sfence|fsin|xbegin|fcomi|punpckhwd|cmps|shr|lodsb|wait|emms'
+                                 r'|setb|setns|fucomip|movzx|fxam|orps|jo|ht|std|h|sahf|fsubr|fucomp|cwde|jns|fnstsw'
+                                 r'|pslld|rc|ficomp|pextrw|insb|packssdw|cmovg|retn|cmovl|popf|ficom|cbw|faddp|fldl'
+                                 r'|fimul|connect|push|pshufd|cmovnz|movsx|psubd|cmovnb|movsw|cmovns|dd|lahf|punpcklqdq'
+                                 r'|fscale|dw|cmovbe|rol|psz|aas|fstcw|pcmpeqd|lods|paddusb|cmpsd|pshuflw|packsswb'
+                                 r'|paddw|lodsd|lock|cmovge|sbb|xlat|rclsid|pmaxub|enter|les|pminub|btc|sets|bt|off'
+                                 r'|pslldq|punpckhqdq|fucom|pshufw|arpl|vpunpckhqdq|extrn|fcmovnu|shl|into|pand'
+                                 r'|paddd|fabs|psraw|fidiv|bsr|fneni|dbl|popa|outsb|movntps|fucomi|leave|scas|fadd'
+                                 r'|jecxz|movs|lds|fild|fstsw|fcmovne|align|recv|fcomp|bts|subps|stosw|imul|jz'
+                                 r'|punpckldq|asc|cmpsw|fdiv|movsb|setnbe|psubb|pcmpgtd|word|add|fcmovbe|lp|jb|sal'
+                                 r'|jno|subsd|cmovz|psubusb|movsd|js|test|fcompp|fldcw|fstp|paddq|fldenv|neg|flt'
+                                 r'|outs|fpatan|idiv|and|call|orpd|fdivp|insd|por|aaa|prefetch|psllq|cmp|hnt'
+                                 r'|setalc|dword|pcmpeqb|fcmove|pcmpgtw|sldt|stosd|addsd|fdivr|db|cvttsd'
+                                 r'|addpd|ffreep|cdq|pavgw|pmaxsw|accept|punpcklwd|nop|movups|loop|sub|loopne'
+                                 r'|not|fsqrt|sz|retf|cmovs|fnsave|cmpneqpd|fchs|fprem|unicode|setnl|repe|jnb|repne'
+                                 r'|fdivrp|fisub|setle|sysexit|fninit|jg|punpcklbw|or)(?=\s)')  # lol
+    data = opcode_tokenizer.transform(data)
+    data = data.drop('text')
+
+    return data.persist()
 
 
 class Preprocessor:
