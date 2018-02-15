@@ -5,13 +5,11 @@
         - lengths of different sections (HEADER, .text, .idata, .rsrc, etc) of asm file
         - frequency of opcodes
         - frequencies of the top 30 bigrams from the binary files
-        - frequencies of the top 100 4-grams from the binary files
 """
 
-from pyspark.sql.functions import avg
-from pyspark.ml.classification import RandomForestClassifier, OneVsRest
+from pyspark.ml.classification import RandomForestClassifier
 from pyspark.ml.evaluation import MulticlassClassificationEvaluator
-from pyspark.ml.feature import VectorAssembler, CountVectorizer, NGram, StringIndexer, IndexToString, OneHotEncoder
+from pyspark.ml.feature import VectorAssembler, CountVectorizer, NGram, StringIndexer, IndexToString, HashingTF
 
 import elizabeth
 
