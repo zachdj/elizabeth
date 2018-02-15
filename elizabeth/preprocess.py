@@ -215,38 +215,36 @@ def load_asm_tree_features(manifest, base='gs'):
     data = data.toDF(['id', 'url', 'text'])  # DF[id, url, text]
 
     # Tokenization : DF[id, url, text, tokens]
-    section_tokenizer = RegexTokenizer(inputCol='text', outputCol='sections', gaps=False)
-    section_tokenizer.setPattern(r'\.?\w+:(?=[0-9A-F]{8}\s)')
-    data = section_tokenizer.transform(data)
-    opcode_tokenizer = RegexTokenizer(inputCol='text', outputCol='opcodes', gaps=False)
-    opcode_tokenizer.setPattern(r'\b(sti|pmulhw|cmpsb|dec|setnle|paddusw|ins|psadbw|rdtsc|shld|xchg|daa|psubsb|fldln|unk'
-                                 r'|cmovle|fyl|out|movdq|fcos|cmpxchg|loope|setnb|setz|iret|das|ror|f|shrd|prefetcht|fist'
-                                 r'|fbld|fisubr|mulpd|psubusw|movd|pushf|jl|psrlq|jnz|movlps|pcmpgtb|stosb|pmullw|tbyte'
-                                 r'|cmova|pop|jge|movlpd|psrlw|fiadd|fsubp|cpuid|fxch|jmp|jnp|cy|movdqa|pavgusb|rcl|mov'
-                                 r'|hlt|inc|pandn|bsf|movdqu|stmxcsr|frndint|fucompp|fnstenv|wrmsr|jp|cli|lodsw|riid'
-                                 r'|mul|int|sar|setl|psrld|cmovb|pmulhuw|clc|psrldq|pmaddwd|scasb|movapd|outsw|movq'
-                                 r'|setbe|rcr|aad|bswap|fidivr|fisttp|xor|fcom|movaps|pusha|frstor|pshufhw|packuswb'
-                                 r'|outsd|fst|psubsw|byte|scasd|movntdq|andpd|rep|fsub|stc|fbstp|setnz|prefetchnta'
-                                 r'|jle|fsubrp|fndisi|fnclex|cmc|fmulp|psrad|vmovdqu|aam|stru|fcmovnbe|movntq|unpckhpd'
-                                 r'|paddb|psllw|div|fmul|fnstcw|mulsd|pcmpeqw|fxsave|femms|fcomip|fld|adc|pavgb|punpckhbw'
-                                 r'|fldz|ldmxcsr|jbe|bound|in|cld|psubw|a|pminsw|fldlg|paddsb|pxor|seto|paddsw|punpckhdq'
-                                 r'|lea|ja|icebp|cmpps|fistp|sfence|fsin|xbegin|fcomi|punpckhwd|cmps|shr|lodsb|wait|emms'
-                                 r'|setb|setns|fucomip|movzx|fxam|orps|jo|ht|std|h|sahf|fsubr|fucomp|cwde|jns|fnstsw'
-                                 r'|pslld|rc|ficomp|pextrw|insb|packssdw|cmovg|retn|cmovl|popf|ficom|cbw|faddp|fldl'
-                                 r'|fimul|connect|push|pshufd|cmovnz|movsx|psubd|cmovnb|movsw|cmovns|dd|lahf|punpcklqdq'
-                                 r'|fscale|dw|cmovbe|rol|psz|aas|fstcw|pcmpeqd|lods|paddusb|cmpsd|pshuflw|packsswb'
-                                 r'|paddw|lodsd|lock|cmovge|sbb|xlat|rclsid|pmaxub|enter|les|pminub|btc|sets|bt|off'
-                                 r'|pslldq|punpckhqdq|fucom|pshufw|arpl|vpunpckhqdq|extrn|fcmovnu|shl|into|pand'
-                                 r'|paddd|fabs|psraw|fidiv|bsr|fneni|dbl|popa|outsb|movntps|fucomi|leave|scas|fadd'
-                                 r'|jecxz|movs|lds|fild|fstsw|fcmovne|align|recv|fcomp|bts|subps|stosw|imul|jz'
-                                 r'|punpckldq|asc|cmpsw|fdiv|movsb|setnbe|psubb|pcmpgtd|word|add|fcmovbe|lp|jb|sal'
-                                 r'|jno|subsd|cmovz|psubusb|movsd|js|test|fcompp|fldcw|fstp|paddq|fldenv|neg|flt'
-                                 r'|outs|fpatan|idiv|and|call|orpd|fdivp|insd|por|aaa|prefetch|psllq|cmp|hnt'
-                                 r'|setalc|dword|pcmpeqb|fcmove|pcmpgtw|sldt|stosd|addsd|fdivr|db|cvttsd'
-                                 r'|addpd|ffreep|cdq|pavgw|pmaxsw|accept|punpcklwd|nop|movups|loop|sub|loopne'
-                                 r'|not|fsqrt|sz|retf|cmovs|fnsave|cmpneqpd|fchs|fprem|unicode|setnl|repe|jnb|repne'
-                                 r'|fdivrp|fisub|setle|sysexit|fninit|jg|punpcklbw|or)\b')  # lol
-    data = opcode_tokenizer.transform(data)
+    tokenizer = RegexTokenizer(inputCol='text', outputCol='tokens', gaps=False)
+    tokenizer.setPattern(r'(\.?\w+:(?=[0-9A-F]{8}\s))|'
+                         r'(\b(sti|pmulhw|cmpsb|dec|setnle|paddusw|ins|psadbw|rdtsc|shld|xchg|daa|psubsb|fldln|unk'
+                         r'|cmovle|fyl|out|movdq|fcos|cmpxchg|loope|setnb|setz|iret|das|ror|f|shrd|prefetcht|fist'
+                         r'|fbld|fisubr|mulpd|psubusw|movd|pushf|jl|psrlq|jnz|movlps|pcmpgtb|stosb|pmullw|tbyte'
+                         r'|cmova|pop|jge|movlpd|psrlw|fiadd|fsubp|cpuid|fxch|jmp|jnp|cy|movdqa|pavgusb|rcl|mov'
+                         r'|hlt|inc|pandn|bsf|movdqu|stmxcsr|frndint|fucompp|fnstenv|wrmsr|jp|cli|lodsw|riid'
+                         r'|mul|int|sar|setl|psrld|cmovb|pmulhuw|clc|psrldq|pmaddwd|scasb|movapd|outsw|movq'
+                         r'|setbe|rcr|aad|bswap|fidivr|fisttp|xor|fcom|movaps|pusha|frstor|pshufhw|packuswb'
+                         r'|outsd|fst|psubsw|byte|scasd|movntdq|andpd|rep|fsub|stc|fbstp|setnz|prefetchnta'
+                         r'|jle|fsubrp|fndisi|fnclex|cmc|fmulp|psrad|vmovdqu|aam|stru|fcmovnbe|movntq|unpckhpd'
+                         r'|paddb|psllw|div|fmul|fnstcw|mulsd|pcmpeqw|fxsave|femms|fcomip|fld|adc|pavgb|punpckhbw'
+                         r'|fldz|ldmxcsr|jbe|bound|in|cld|psubw|a|pminsw|fldlg|paddsb|pxor|seto|paddsw|punpckhdq'
+                         r'|lea|ja|icebp|cmpps|fistp|sfence|fsin|xbegin|fcomi|punpckhwd|cmps|shr|lodsb|wait|emms'
+                         r'|setb|setns|fucomip|movzx|fxam|orps|jo|ht|std|h|sahf|fsubr|fucomp|cwde|jns|fnstsw'
+                         r'|pslld|rc|ficomp|pextrw|insb|packssdw|cmovg|retn|cmovl|popf|ficom|cbw|faddp|fldl'
+                         r'|fimul|connect|push|pshufd|cmovnz|movsx|psubd|cmovnb|movsw|cmovns|dd|lahf|punpcklqdq'
+                         r'|fscale|dw|cmovbe|rol|psz|aas|fstcw|pcmpeqd|lods|paddusb|cmpsd|pshuflw|packsswb'
+                         r'|paddw|lodsd|lock|cmovge|sbb|xlat|rclsid|pmaxub|enter|les|pminub|btc|sets|bt|off'
+                         r'|pslldq|punpckhqdq|fucom|pshufw|arpl|vpunpckhqdq|extrn|fcmovnu|shl|into|pand'
+                         r'|paddd|fabs|psraw|fidiv|bsr|fneni|dbl|popa|outsb|movntps|fucomi|leave|scas|fadd'
+                         r'|jecxz|movs|lds|fild|fstsw|fcmovne|align|recv|fcomp|bts|subps|stosw|imul|jz'
+                         r'|punpckldq|asc|cmpsw|fdiv|movsb|setnbe|psubb|pcmpgtd|word|add|fcmovbe|lp|jb|sal'
+                         r'|jno|subsd|cmovz|psubusb|movsd|js|test|fcompp|fldcw|fstp|paddq|fldenv|neg|flt'
+                         r'|outs|fpatan|idiv|and|call|orpd|fdivp|insd|por|aaa|prefetch|psllq|cmp|hnt'
+                         r'|setalc|dword|pcmpeqb|fcmove|pcmpgtw|sldt|stosd|addsd|fdivr|db|cvttsd'
+                         r'|addpd|ffreep|cdq|pavgw|pmaxsw|accept|punpcklwd|nop|movups|loop|sub|loopne'
+                         r'|not|fsqrt|sz|retf|cmovs|fnsave|cmpneqpd|fchs|fprem|unicode|setnl|repe|jnb|repne'
+                         r'|fdivrp|fisub|setle|sysexit|fninit|jg|punpcklbw|or)\b)')  # lol
+    data = tokenizer.transform(data)
     data = data.drop('text')
 
     return data.persist()
