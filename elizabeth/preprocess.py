@@ -219,7 +219,7 @@ def load_asm_tree_features(manifest, base='gs'):
     section_tokenizer.setPattern(r'\.?\w+:(?=[0-9A-F]{8}\s)')
     data = section_tokenizer.transform(data)
     opcode_tokenizer = RegexTokenizer(inputCol='text', outputCol='opcodes', gaps=False)
-    opcode_tokenizer.setPattern(r'(?<=\s)(sti|pmulhw|cmpsb|dec|setnle|paddusw|ins|psadbw|rdtsc|shld|xchg|daa|psubsb|fldln|unk'
+    opcode_tokenizer.setPattern(r'\b(sti|pmulhw|cmpsb|dec|setnle|paddusw|ins|psadbw|rdtsc|shld|xchg|daa|psubsb|fldln|unk'
                                  r'|cmovle|fyl|out|movdq|fcos|cmpxchg|loope|setnb|setz|iret|das|ror|f|shrd|prefetcht|fist'
                                  r'|fbld|fisubr|mulpd|psubusw|movd|pushf|jl|psrlq|jnz|movlps|pcmpgtb|stosb|pmullw|tbyte'
                                  r'|cmova|pop|jge|movlpd|psrlw|fiadd|fsubp|cpuid|fxch|jmp|jnp|cy|movdqa|pavgusb|rcl|mov'
@@ -245,7 +245,7 @@ def load_asm_tree_features(manifest, base='gs'):
                                  r'|setalc|dword|pcmpeqb|fcmove|pcmpgtw|sldt|stosd|addsd|fdivr|db|cvttsd'
                                  r'|addpd|ffreep|cdq|pavgw|pmaxsw|accept|punpcklwd|nop|movups|loop|sub|loopne'
                                  r'|not|fsqrt|sz|retf|cmovs|fnsave|cmpneqpd|fchs|fprem|unicode|setnl|repe|jnb|repne'
-                                 r'|fdivrp|fisub|setle|sysexit|fninit|jg|punpcklbw|or)(?=\s)')  # lol
+                                 r'|fdivrp|fisub|setle|sysexit|fninit|jg|punpcklbw|or)\b')  # lol
     data = opcode_tokenizer.transform(data)
     data = data.drop('text')
 
