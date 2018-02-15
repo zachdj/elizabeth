@@ -62,21 +62,9 @@ def main(train_x, train_y, test_x, test_y=None, base='gs'):
     train_byte_features = cv_model.transform(train_byte_features).drop('twoGrams')
     test_byte_features = cv_model.transform(test_byte_features).drop('twoGrams')
 
-    # cv = CountVectorizer(inputCol="fourGrams", outputCol="fourGramCounts", vocabSize=100)
-    # cv_model = cv.fit(train_byte_features)
-    # train_byte_features = cv_model.transform(train_byte_features).drop('fourGrams')
-    # test_byte_features = cv_model.transform(test_byte_features).drop('fourGrams')
-
     # drop the tokens loaded by the preprocessor
     train_byte_features = train_byte_features.drop('features')
     test_byte_features = test_byte_features.drop('features')
-
-    # combine features into a single feature vector, and drop the individual columns
-    # bytes_va = VectorAssembler(inputCols=['twoGramCounts', 'fourGramCounts'], outputCol='byte_features')
-    # train_byte_features = bytes_va.transform(train_byte_features)\
-    #     .drop('twoGramCounts', 'fourGramCounts')
-    # test_byte_features = bytes_va.transform(test_byte_features)\
-    #     .drop('twoGramCounts', 'fourGramCounts')
 
     # unify the features from the bytes and the asm files
     train = train_asm_features.join(train_byte_features, on='id')
