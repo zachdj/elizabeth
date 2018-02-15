@@ -19,13 +19,13 @@ def main(train_x, train_y, test_x, test_y=None, base='gs'):
     train_asm_features = elizabeth.preprocess.load_asm_tree_features(train_x).drop('url')
     test_asm_features = elizabeth.preprocess.load_asm_tree_features(test_x).drop('url')
 
-    section_cv = CountVectorizer(inputCol='sections', outputCol='section_counts').fit(train_asm_features)
-    train_asm_features = section_cv.transform(train_asm_features).drop('sections')
-    test_asm_features = section_cv.transform(test_asm_features).drop('sections')
+    section_hasher = HashingTF(inputCol='sections', outputCol='section_counts', numFeatures=2048)
+    train_asm_features = section_hasher.transform(train_asm_features).drop('sections')
+    test_asm_features = section_hasher.transform(test_asm_features).drop('sections')
 
-    opcode_cv = CountVectorizer(inputCol='opcodes', outputCol='opcode_counts').fit(test_asm_features)
-    train_asm_features = opcode_cv.transform(train_asm_features).drop('opcodes')
-    test_asm_features = opcode_cv.transform(test_asm_features).drop('opcodes')
+    opcode_hasher = HashingTF(inputCol='opcodes', outputCol='opcode_counts', numFeatures=8192)
+    train_asm_features = opcode_hasher.transform(train_asm_features).drop('opcodes')
+    test_asm_features = opcode_hasher.transform(test_asm_features).drop('opcodes')
 
     asm_va = VectorAssembler(inputCols=['section_counts', 'opcode_counts'], outputCol='asm_features')
 
@@ -88,7 +88,7 @@ def main(train_x, train_y, test_x, test_y=None, base='gs'):
 
     # create and train a Random Forest classifier
     rf = RandomForestClassifier(labelCol='indexedLabel', featuresCol='features',
-                                 numTrees=20, maxDepth=10, minInfoGain=0.0, seed=12345)
+                                 numTrees=10, maxDepth=10, minInfoGain=0.0, seed=12345)
     model = rf.fit(train)
     prediction = model.transform(test)
     prediction = index_labeller.transform(prediction)  # DF[id, url, ... prediction, predictedClass]
