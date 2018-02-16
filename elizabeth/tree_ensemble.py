@@ -19,18 +19,9 @@ def main(train_x, train_y, test_x, test_y=None, base='gs'):
     train_asm_features = elizabeth.preprocess.load_asm_tree_features(train_x).drop('url')
     test_asm_features = elizabeth.preprocess.load_asm_tree_features(test_x).drop('url')
 
-    section_hasher = HashingTF(inputCol='sections', outputCol='section_counts', numFeatures=2048)
-    train_asm_features = section_hasher.transform(train_asm_features).drop('sections')
-    test_asm_features = section_hasher.transform(test_asm_features).drop('sections')
-
-    opcode_hasher = HashingTF(inputCol='opcodes', outputCol='opcode_counts', numFeatures=8192)
-    train_asm_features = opcode_hasher.transform(train_asm_features).drop('opcodes')
-    test_asm_features = opcode_hasher.transform(test_asm_features).drop('opcodes')
-
-    asm_va = VectorAssembler(inputCols=['section_counts', 'opcode_counts'], outputCol='asm_features')
-
-    train_asm_features = asm_va.transform(train_asm_features)
-    test_asm_features = asm_va.transform(test_asm_features)
+    asm_token_counter = CountVectorizer(inputCol='tokens', outputCol='asm_features', vocabSize=45).fit(train_asm_features)
+    train_asm_features = asm_token_counter.transform(train_asm_features).drop('tokens')
+    test_asm_features = asm_token_counter.transform(test_asm_features).drop('tokens')
 
     # generate feature set for byte files
     train_byte_features = elizabeth.load(train_x, train_y, base=base, kind='bytes').drop('text')
@@ -50,11 +41,8 @@ def main(train_x, train_y, test_x, test_y=None, base='gs'):
     # transform the data
     # create ngrams
     two_gram = NGram(n=2, inputCol='features', outputCol='twoGrams')
-    four_gram = NGram(n=4, inputCol='features', outputCol='fourGrams')
     train_byte_features = two_gram.transform(train_byte_features)
-    train_byte_features = four_gram.transform(train_byte_features)
     test_byte_features = two_gram.transform(test_byte_features)
-    test_byte_features = four_gram.transform(test_byte_features)
 
     # create ngram frequencies
     cv = CountVectorizer(inputCol="twoGrams", outputCol="byte_features", vocabSize=30)
