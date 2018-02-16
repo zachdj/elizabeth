@@ -16,27 +16,16 @@ import elizabeth
 
 def main(train_x, train_y, test_x, test_y=None, base='gs'):
     # generate feature set for asm files
-    train_asm_features = elizabeth.preprocess.load_asm_tree_features(train_x).drop('url')
-    test_asm_features = elizabeth.preprocess.load_asm_tree_features(test_x).drop('url')
+    train_asm_features = elizabeth.preprocess.load(train_x, train_y, base=base,  kind='sect_ops').drop('url', 'label')
+    test_asm_features = elizabeth.preprocess.load(test_x, test_y, base=base,  kind='sect_ops').drop('url', 'label')
 
-    asm_token_counter = CountVectorizer(inputCol='tokens', outputCol='asm_features', vocabSize=45).fit(train_asm_features)
-    train_asm_features = asm_token_counter.transform(train_asm_features).drop('tokens')
-    test_asm_features = asm_token_counter.transform(test_asm_features).drop('tokens')
+    asm_token_counter = CountVectorizer(inputCol='features', outputCol='asm_features', vocabSize=45).fit(train_asm_features)
+    train_asm_features = asm_token_counter.transform(train_asm_features).drop('features')
+    test_asm_features = asm_token_counter.transform(test_asm_features).drop('features')
 
     # generate feature set for byte files
     train_byte_features = elizabeth.load(train_x, train_y, base=base, kind='bytes').drop('text')
     test_byte_features = elizabeth.load(test_x, test_y, base=base, kind='bytes').drop('text')
-
-    # convert the string labels to numeric indices
-    # the handleInvalid param allows the label indexer to deal with labels that weren't seen during fitting
-    label_indexer = StringIndexer(inputCol='label', outputCol='indexedLabel', handleInvalid="skip")
-    label_indexer = label_indexer.fit(train_byte_features)
-    train_byte_features = label_indexer.transform(train_byte_features)
-    # the test set won't always have labels
-    if test_y is not None:
-        test_byte_features = label_indexer.transform(test_byte_features)
-
-    index_labeller = IndexToString(inputCol='prediction', outputCol='predictedClass', labels=label_indexer.labels)
 
     # transform the data
     # create ngrams
@@ -61,6 +50,17 @@ def main(train_x, train_y, test_x, test_y=None, base='gs'):
     assembler = VectorAssembler(inputCols=['byte_features', 'asm_features'], outputCol='features')
     train = assembler.transform(train).drop('byte_features', 'asm_features')
     test = assembler.transform(test).drop('byte_features', 'asm_features')
+
+    # convert the string labels to numeric indices
+    # the handleInvalid param allows the label indexer to deal with labels that weren't seen during fitting
+    label_indexer = StringIndexer(inputCol='label', outputCol='indexedLabel', handleInvalid="skip")
+    label_indexer = label_indexer.fit(train)
+    train = label_indexer.transform(train)
+    # the test set won't always have labels
+    if test_y is not None:
+        test = label_indexer.transform(test)
+
+    index_labeller = IndexToString(inputCol='prediction', outputCol='predictedClass', labels=label_indexer.labels)
 
     # create and train a Random Forest classifier
     rf = RandomForestClassifier(labelCol='indexedLabel', featuresCol='features',

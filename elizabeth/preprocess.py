@@ -1,14 +1,12 @@
 import re
 from copy import copy
 from pathlib import Path
-
-import pyspark
 from pyspark.ml.feature import RegexTokenizer, CountVectorizer
 
 import elizabeth
 
 
-def hash_to_url(hash=None, base='./data', kind='bytes'):
+def hash_to_url(hash=None, base='./data', extension='bytes'):
     '''Returns a function mapping document hashes to Google Storage URLs.
 
     The API for this function is fancy. It can be used directly as a closure:
@@ -28,7 +26,7 @@ def hash_to_url(hash=None, base='./data', kind='bytes'):
         base (path):
             The base of the URL or path to the data.
             The data must live at '{base}/{kind}/{hash}.{kind}'
-        kind (str):
+        extension (str):
             The kind of file to use, either 'bytes' or 'asm'.
 
     Returns:
@@ -45,7 +43,7 @@ def hash_to_url(hash=None, base='./data', kind='bytes'):
         base = Path(base).resolve()
         base = f'file:{base}'
 
-    closure = lambda hash: f'{base}/{kind}/{hash}.{kind}'
+    closure = lambda hash: f'{base}/{extension}/{hash}.{extension}'
 
     if hash is None:
         return closure
@@ -75,6 +73,9 @@ def load_data(manifest, base='gs', kind='bytes'):
             UGA over the Google Storage and HTTPS protocols respectivly.
         kind (str):
             The kind of file to use, either 'bytes' or 'opt', 'sect_ops'.
+            'bytes' will load the bytes from the binary files.  'opt' will load the opcodes from the asm files.
+            'sect_opt' will load the section headers (HEADER:, code:, data:, idata:, .rsrc:, etc.) and the opcodes from
+            the asm files.
 
     Returns:
         DataFrame[id: bigint, url: string, text: string]
@@ -86,11 +87,15 @@ def load_data(manifest, base='gs', kind='bytes'):
     if base == 'https': base = 'https://storage.googleapis.com/uga-dsp/project2/data'
     if base == 'gs': base = 'gs://uga-dsp/project2/data'
 
+    extension = 'bytes'
+    if kind != 'bytes':
+        extension='asm'
+
     # Read the manifest as an iterator over (id, url).
     # We use Spark to build the iterator to support hdfs etc.
     manifest = str(manifest)  # cast to str to support pathlib.Path etc.
     manifest = ctx.textFile(manifest)                           # RDD[hash]
-    manifest = manifest.map(hash_to_url(base=base, kind=kind))  # RDD[url]
+    manifest = manifest.map(hash_to_url(base=base, extension=extension))  # RDD[url]
     manifest = manifest.zipWithIndex()                          # RDD[url, id]
     manifest = manifest.map(lambda x: (x[1], x[0]))             # RDD[id, url]
     manifest = manifest.toLocalIterator()                       # (id, url)
@@ -192,7 +197,10 @@ def load(manifest, labels=None, base='gs', kind='bytes'):
             'https' expand to the URLs used by Data Science Practicum at UGA
             over the Google Storage and HTTPS protocols respectivly.
         kind (str):
-            The kind of file to use, either 'bytes' or 'asm'.
+            The kind of file to use, either 'bytes' or 'opt', 'sect_ops'.
+            'bytes' will load the bytes from the binary files.  'opt' will load the opcodes from the asm files.
+            'sect_opt' will load the section headers (HEADER:, code:, data:, idata:, .rsrc:, etc.) and the opcodes from
+            the asm files.
 
     Returns:
         DataFrame[id: bigint, url: string, text: string, label: string]
