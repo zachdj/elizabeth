@@ -143,7 +143,71 @@ def load_data(manifest, base='gs', kind='bytes'):
     data = tokenizer.transform(data)
     data = data.drop('text')
 
-    return data.persist()
+    return data
+
+
+def load_joint_tokens(manifest, base='gs'):
+    spark = elizabeth.session()
+    ctx = spark.sparkContext
+
+    # Special base paths
+    if base == 'https': base = 'https://storage.googleapis.com/uga-dsp/project2/data'
+    if base == 'gs': base = 'gs://uga-dsp/project2/data'
+
+    # Read the manifest as an iterator over (id, url).
+    # We use Spark to build the iterator to support hdfs etc.
+    manifest = str(manifest)  # cast to str to support pathlib.Path etc.
+    manifest = ctx.textFile(manifest)  # RDD[hash]
+    # RDD[binary_url, asm_url]
+    manifest = manifest.map(lambda x: (hash_to_url(x, base=base, extension='bytes'), hash_to_url(x, base=base, extension='asm')))
+    manifest = manifest.zipWithIndex()  # RDD[(url, url), id]
+    manifest = manifest.map(lambda x: (x[1], x[0][0], x[0][1]))  # RDD[id, url, url]
+    manifest = manifest.toLocalIterator()  # (id, url, url)
+
+    # load the two files for each document in the manifest
+    data = [(ctx.wholeTextFiles(byte_url).map(lambda x, id=id: (id, x[1])),
+        ctx.wholeTextFiles(asm_url).map(lambda x, id=id: (id, x[1])) )
+        for id, byte_url, asm_url in manifest]  # [ (RDD[id, text], RDD[id,text]) ]
+
+    #[RDD[id, bytes + asm_text]]
+    data = [rdd1.join(rdd2).map(lambda x: (x[0], x[1][0] + "\n\n" + x[1][1])) for rdd1, rdd2 in data]
+    data = ctx.union(data)  # RDD[id, text]
+    data = data.toDF(['id', 'text'])  # DF[id, text]
+
+    tokenizer = RegexTokenizer(inputCol='text', outputCol='features', gaps=False)
+    tokenizer.setPattern(r'(\b[0-9A-F]{2} [0-9A-F]{2}\b)|'  # gets (mostly) bigrams of bytes
+                         r'(\.?\w+:(?=[0-9A-F]{8}\s))|'     # gets segment title
+                         r'(\b(sti|pmulhw|cmpsb|dec|setnle|paddusw|ins|psadbw|rdtsc|shld|xchg|daa|psubsb|fldln|unk'
+                         r'|cmovle|fyl|out|movdq|fcos|cmpxchg|loope|setnb|setz|iret|das|ror|f|shrd|prefetcht|fist'
+                         r'|fbld|fisubr|mulpd|psubusw|movd|pushf|jl|psrlq|jnz|movlps|pcmpgtb|stosb|pmullw|tbyte'
+                         r'|cmova|pop|jge|movlpd|psrlw|fiadd|fsubp|cpuid|fxch|jmp|jnp|cy|movdqa|pavgusb|rcl|mov'
+                         r'|hlt|inc|pandn|bsf|movdqu|stmxcsr|frndint|fucompp|fnstenv|wrmsr|jp|cli|lodsw|riid'
+                         r'|mul|int|sar|setl|psrld|cmovb|pmulhuw|clc|psrldq|pmaddwd|scasb|movapd|outsw|movq'
+                         r'|setbe|rcr|aad|bswap|fidivr|fisttp|xor|fcom|movaps|pusha|frstor|pshufhw|packuswb'
+                         r'|outsd|fst|psubsw|byte|scasd|movntdq|andpd|rep|fsub|stc|fbstp|setnz|prefetchnta'
+                         r'|jle|fsubrp|fndisi|fnclex|cmc|fmulp|psrad|vmovdqu|aam|stru|fcmovnbe|movntq|unpckhpd'
+                         r'|paddb|psllw|div|fmul|fnstcw|mulsd|pcmpeqw|fxsave|femms|fcomip|fld|adc|pavgb|punpckhbw'
+                         r'|fldz|ldmxcsr|jbe|bound|in|cld|psubw|a|pminsw|fldlg|paddsb|pxor|seto|paddsw|punpckhdq'
+                         r'|lea|ja|icebp|cmpps|fistp|sfence|fsin|xbegin|fcomi|punpckhwd|cmps|shr|lodsb|wait|emms'
+                         r'|setb|setns|fucomip|movzx|fxam|orps|jo|ht|std|h|sahf|fsubr|fucomp|cwde|jns|fnstsw'
+                         r'|pslld|rc|ficomp|pextrw|insb|packssdw|cmovg|retn|cmovl|popf|ficom|cbw|faddp|fldl'
+                         r'|fimul|connect|push|pshufd|cmovnz|movsx|psubd|cmovnb|movsw|cmovns|lahf|punpcklqdq'
+                         r'|fscale|cmovbe|rol|psz|aas|fstcw|pcmpeqd|lods|paddusb|cmpsd|pshuflw|packsswb'
+                         r'|paddw|lodsd|lock|cmovge|sbb|xlat|rclsid|pmaxub|enter|les|pminub|btc|sets|bt|off'
+                         r'|pslldq|punpckhqdq|fucom|pshufw|arpl|vpunpckhqdq|extrn|fcmovnu|shl|into|pand'
+                         r'|paddd|fabs|psraw|fidiv|bsr|fneni|dbl|popa|outsb|movntps|fucomi|leave|scas|fadd'
+                         r'|jecxz|movs|lds|fild|fstsw|fcmovne|align|recv|fcomp|bts|subps|stosw|imul|jz'
+                         r'|punpckldq|asc|cmpsw|fdiv|movsb|setnbe|psubb|pcmpgtd|word|add|fcmovbe|lp|jb|sal'
+                         r'|jno|subsd|cmovz|psubusb|movsd|js|test|fcompp|fldcw|fstp|paddq|fldenv|neg|flt'
+                         r'|outs|fpatan|idiv|and|call|orpd|fdivp|insd|por|aaa|prefetch|psllq|cmp|hnt'
+                         r'|setalc|dword|pcmpeqb|fcmove|pcmpgtw|sldt|stosd|addsd|fdivr|cvttsd'
+                         r'|addpd|ffreep|cdq|pavgw|pmaxsw|accept|punpcklwd|nop|movups|loop|sub|loopne'
+                         r'|not|fsqrt|sz|retf|cmovs|fnsave|cmpneqpd|fchs|fprem|unicode|setnl|repe|jnb|repne'
+                         r'|fdivrp|fisub|setle|sysexit|fninit|jg|punpcklbw|or)\b)')  # lol (gets opcodes)
+    data = tokenizer.transform(data)
+    data = data.drop('text')
+
+    return data
 
 
 def load_labels(labels):
@@ -178,7 +242,7 @@ def load_labels(labels):
     labels = labels.map(lambda x: (x[1], int(x[0])))  # RDD[id, label]
     labels = labels.toDF(['id', 'label'])             # DF[id, label]
 
-    return labels.persist()
+    return labels
 
 
 def load(manifest, labels=None, base='gs', kind='bytes'):
@@ -195,23 +259,28 @@ def load(manifest, labels=None, base='gs', kind='bytes'):
         base (path):
             The base path to the data files. The special strings 'gs' and
             'https' expand to the URLs used by Data Science Practicum at UGA
-            over the Google Storage and HTTPS protocols respectivly.
+            over the Google Storage and HTTPS protocols respectively.
         kind (str):
-            The kind of file to use, either 'bytes' or 'opt', 'sect_ops'.
-            'bytes' will load the bytes from the binary files.  'opt' will load the opcodes from the asm files.
-            'sect_opt' will load the section headers (HEADER:, code:, data:, idata:, .rsrc:, etc.) and the opcodes from
+            The kind of file to use, either 'bytes' or 'opt', 'sect_ops', or 'joint'
+            'bytes' will load the bytes from the binary files.
+            'opt' will load the opcodes from the asm files.
+            'sect_opt' will load the segment titles (HEADER:, code:, data:, idata:, .rsrc:, etc.) and the opcodes from
             the asm files.
+            'joint' loads 2-grams from the binary files along with segment titles and opcodes from the asm files.
 
     Returns:
         DataFrame[id: bigint, url: string, text: string, label: string]
     '''
-    if labels:
-        x = load_data(manifest, base, kind).unpersist()
-        y = load_labels(labels).unpersist()
-        return x.join(y, on='id').persist()
-
+    if kind == 'joint':
+        x = load_joint_tokens(manifest, base)
     else:
-        return load_data(manifest, base, kind)
+        x = load_data(manifest, base, kind)
+
+    if labels:
+        y = load_labels(labels)
+        return x.join(y, on='id').persist()
+    else:
+        return x
 
 
 class Preprocessor:
