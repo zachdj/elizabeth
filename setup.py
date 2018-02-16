@@ -8,7 +8,7 @@ setup(
     description='Distributed malware classification with Spark',
     url='https://github.com/dsp-uga/elizabeth',
     maintainer='Chris Barrick, Zach Jones, Jeremy Shi',
-    maintainer_email='cbarrick1@gmail.com, zachydj@gmail.com, shiyuanming@gmail.com',
+    maintainer_email='cbarrick1@gmail.com, zach.dean.jones@gmail.com, jeremy.shi@uga.edu',
     license='MIT',
     packages=['elizabeth'],
 )

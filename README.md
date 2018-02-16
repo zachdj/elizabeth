@@ -36,5 +36,5 @@ The top of the submit script contains a few configuration options which you may 
 Copyright (c) 2018
 
 - Chris Barrick <cbarrick1@gmail.com>
-- Zach Jones <zachydj@gmail.com>
+- Zach Jones <zach.dean.jones@gmail.com>
 - Jeremy Shi <jeremy.shi@uga.edu>
