@@ -15,13 +15,15 @@ import elizabeth
 
 
 def main(train_x, train_y, test_x, test_y=None, base='gs'):
-    # generate feature set for asm files
-    train_asm_features = elizabeth.preprocess.load(train_x, train_y, base=base,  kind='sect_ops').drop('url')
-    test_asm_features = elizabeth.preprocess.load(test_x, test_y, base=base,  kind='sect_ops').drop('url')
+    # generate joint feature set
+    train_features = elizabeth.preprocess.load(train_x, train_y, base=base,  kind='joint').drop('url')
+    test_features = elizabeth.preprocess.load(test_x, test_y, base=base,  kind='joint').drop('url')
 
-    asm_token_counter = CountVectorizer(inputCol='features', outputCol='asm_features', minDF=10).fit(train_asm_features)
-    train = asm_token_counter.transform(train_asm_features).drop('features')
-    test = asm_token_counter.transform(test_asm_features).drop('features')
+    train_features.show()
+
+    token_counter = CountVectorizer(inputCol='features', outputCol='tokenCounts', minDF=10).fit(train_features)
+    train = token_counter.transform(train_features).drop('features')
+    test = token_counter.transform(test_features).drop('features')
 
     # convert the string labels to numeric indices
     # the handleInvalid param allows the label indexer to deal with labels that weren't seen during fitting
@@ -35,7 +37,7 @@ def main(train_x, train_y, test_x, test_y=None, base='gs'):
     index_labeller = IndexToString(inputCol='prediction', outputCol='predictedClass', labels=label_indexer.labels)
 
     # create and train a Random Forest classifier
-    rf = RandomForestClassifier(labelCol='indexedLabel', featuresCol='asm_features',
+    rf = RandomForestClassifier(labelCol='indexedLabel', featuresCol='tokenCounts',
                                  numTrees=20, maxDepth=10, minInfoGain=0.0, seed=12345)
     model = rf.fit(train)
     prediction = model.transform(test)
