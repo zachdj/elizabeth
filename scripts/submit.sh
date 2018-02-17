@@ -9,6 +9,7 @@ DRIVER_MEMORY='6g'
 EXECUTOR_CORES='4'
 EXECUTOR_MEMORY='6g'
 WORKER_MEMORY='4g'
+INIT_ACTION='gs://cbarrick/dataproc-bootstrap.sh'
 
 echo "==> INFO"
 echo "command: $@"
@@ -36,7 +37,7 @@ gcloud dataproc clusters create $CLUSTER \
 	--zone $ZONE \
 	--worker-machine-type n1-standard-4 \
 	--num-workers 4 \
-	--initialization-actions gs://cbarrick/dataproc-bootstrap.sh
+	--initialization-actions "$INIT_ACTION"
 echo
 
 # Submit the job
