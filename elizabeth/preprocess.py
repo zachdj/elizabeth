@@ -46,7 +46,7 @@ _opcodes = [
 ]
 
 
-def hash_to_url(hash=None, base='./data', extension='bytes'):
+def hash_to_url(hash=None, base='./data', kind='bytes'):
     '''Returns a function mapping document hashes to Google Storage URLs.
 
     The API for this function is fancy. It can be used directly as a closure:
@@ -66,7 +66,7 @@ def hash_to_url(hash=None, base='./data', extension='bytes'):
         base (path):
             The base of the URL or path to the data.
             The data must live at '{base}/{kind}/{hash}.{kind}'
-        extension (str):
+        kind (str):
             The kind of file to use, either 'bytes' or 'asm'.
 
     Returns:
@@ -83,7 +83,7 @@ def hash_to_url(hash=None, base='./data', extension='bytes'):
         base = Path(base).resolve()
         base = f'file:{base}'
 
-    closure = lambda hash: f'{base}/{extension}/{hash}.{extension}'
+    closure = lambda hash: f'{base}/{kind}/{hash}.{kind}'
 
     if hash is None:
         return closure
@@ -112,10 +112,9 @@ def load_data(manifest, base='gs', kind='bytes'):
             and 'https' expand to the URLs used by Data Science Practicum at
             UGA over the Google Storage and HTTPS protocols respectivly.
         kind (str):
-            The kind of file to use, either 'bytes' or 'opt', 'sect_ops'.
-            'bytes' will load the bytes from the binary files.  'opt' will load the opcodes from the asm files.
-            'sect_opt' will load the section headers (HEADER:, code:, data:, idata:, .rsrc:, etc.) and the opcodes from
-            the asm files.
+            The kind of file to use, one of 'bytes' or 'asm'.
+            - 'bytes' loads hex strings for the bytes in the binary files.
+            - 'asm' loads segment titles and the opcodes from the asm files.
 
     Returns:
         DataFrame[id: bigint, url: string, text: string]
@@ -127,15 +126,15 @@ def load_data(manifest, base='gs', kind='bytes'):
     if base == 'https': base = 'https://storage.googleapis.com/uga-dsp/project2/data'
     if base == 'gs': base = 'gs://uga-dsp/project2/data'
 
-    extension = 'bytes'
+    kind = 'bytes'
     if kind != 'bytes':
-        extension='asm'
+        kind='asm'
 
     # Read the manifest as an iterator over (id, url).
     # We use Spark to build the iterator to support hdfs etc.
     manifest = str(manifest)  # cast to str to support pathlib.Path etc.
     manifest = ctx.textFile(manifest)                           # RDD[hash]
-    manifest = manifest.map(hash_to_url(base=base, extension=extension))  # RDD[url]
+    manifest = manifest.map(hash_to_url(base=base, kind=kind))  # RDD[url]
     manifest = manifest.zipWithIndex()                          # RDD[url, id]
     manifest = manifest.map(lambda x: (x[1], x[0]))             # RDD[id, url]
     manifest = manifest.toLocalIterator()                       # (id, url)
@@ -151,8 +150,7 @@ def load_data(manifest, base='gs', kind='bytes'):
     tokenizer = RegexTokenizer(inputCol='text', outputCol='features', gaps=False)
     opcodes = '|'.join(_opcodes)
     if kind == 'bytes': tokenizer.setPattern('(?<= )[0-9A-F]{2}')
-    elif kind == 'ops': tokenizer.setPattern('(?<=\.([a-z]+):([0-9A-F]+)((?:\s[0-9A-F]{2})+)\s+)([a-z]+)')
-    elif kind == 'sect_ops': tokenizer.setPattern(r'(\.?\w+:(?=[0-9A-F]{8}\s))|(\b(' + opcodes + r')\b)')
+    elif kind == 'asm': tokenizer.setPattern(r'(\.?\w+:(?=[0-9A-F]{8}\s))|(\b(' + opcodes + r')\b)')
     data = tokenizer.transform(data)
     data = data.drop('text')
 
@@ -172,7 +170,7 @@ def load_joint_tokens(manifest, base='gs'):
     manifest = str(manifest)  # cast to str to support pathlib.Path etc.
     manifest = ctx.textFile(manifest)  # RDD[hash]
     # RDD[binary_url, asm_url]
-    manifest = manifest.map(lambda x: (hash_to_url(x, base=base, extension='bytes'), hash_to_url(x, base=base, extension='asm')))
+    manifest = manifest.map(lambda x: (hash_to_url(x, base=base, kind='bytes'), hash_to_url(x, base=base, kind='asm')))
     manifest = manifest.zipWithIndex()  # RDD[(url, url), id]
     manifest = manifest.map(lambda x: (x[1], x[0][0], x[0][1]))  # RDD[id, url, url]
     manifest = manifest.toLocalIterator()  # (id, url, url)
@@ -249,12 +247,11 @@ def load(manifest, labels=None, base='gs', kind='bytes'):
             'https' expand to the URLs used by Data Science Practicum at UGA
             over the Google Storage and HTTPS protocols respectively.
         kind (str):
-            The kind of file to use, either 'bytes' or 'opt', 'sect_ops', or 'joint'
-            'bytes' will load the bytes from the binary files.
-            'opt' will load the opcodes from the asm files.
-            'sect_opt' will load the segment titles (HEADER:, code:, data:, idata:, .rsrc:, etc.) and the opcodes from
-            the asm files.
-            'joint' loads 2-grams from the binary files along with segment titles and opcodes from the asm files.
+            The kind of file to use, one of 'bytes', 'asm', or'joint'.
+            - 'bytes' loads hex strings for the bytes in the binary files.
+            - 'asm' loads segment titles and the opcodes from the asm files.
+            - 'joint' loads bigrams from the binary files and segment titles
+              and opcodes from the asm files.
 
     Returns:
         DataFrame[id: bigint, url: string, text: string, label: string]
